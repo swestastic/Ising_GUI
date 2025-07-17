@@ -1,4 +1,6 @@
+# Look at using https://www.pyqtgraph.org/ for plotting instead of matplotlib
 import tkinter as tk
+from tkinter import ttk
 import numpy as np
 import random
 
@@ -6,8 +8,14 @@ from numba import jit, prange
 
 from PIL import Image, ImageTk
 
+import matplotlib.pyplot as plt
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+from collections import deque
+
 scale = 8 # scaling factor for display
-update_delay = 5 # milliseconds between updates
+simulation_update_delay = 5 # milliseconds between updates
+plot_update_delay = 100  # ms
+count = 0
 
 # parameters
 L = 50 # lattice size (LxL)
@@ -15,12 +23,31 @@ T = 2.27 # temperature
 J = 1 # coupling constant
 Acceptance = 0 # initialize acceptance counter
 
+# define functions to calculate energy and magnetization
+@jit(nopython=True)
+def Energy(spins,J):
+  # Calculates the energy of a given lattice configuration. 
+  TotalEnergy=0
+  side = len(spins)
+  for i in prange(side):
+    for j in prange(side):
+      TotalEnergy+= -J * (spins[i,j] * (spins[i-1,j] + spins[(i+1)%side,j] + spins[i,j-1] + spins[i,(j+1)%side]))
+  return TotalEnergy/2
+
+@jit(nopython=True)
+def Mag(spins): 
+  # Calculates the magnetization of a given lattice configuration.
+  M = np.sum(spins)
+  return M
+
 # initialize spins randomly
 spins = np.random.choice([-1, 1], size=(L, L))
+E = Energy(spins,J)
+M = Mag(spins)
 
 # define a sweep function
 @jit(nopython=True)
-def sweep(spins,T,J,Acceptance):
+def sweep(spins, T, J, Acceptance, E, M):
     # Metropolis single spin flip algorithm. We first pick a random site (x,y) and then calculate the change 
     # in energy if we were to flip it (up->down or down->up). We then draw a number to see if the move is accepted.
     # If it is, then we update the value in the lattice and update the energy, magnetization, and acceptances. 
@@ -36,10 +63,12 @@ def sweep(spins,T,J,Acceptance):
             spins[x,y]*=-1 # update the value in the lattice
             Acceptance += 1 # increment acceptance counter
             flipped_sites.append((x,y))
+            E += dE
+            M += 2*spins[x,y]
 
-    return spins,Acceptance,flipped_sites
+    return spins, Acceptance, flipped_sites, E, M
 
-def spins_to_image(spins):
+def spins_to_image_init(spins):
     L = spins.shape[0]
     # Create an RGB image: white = +1, black = -1
     rgb_array = np.zeros((L, L, 3), dtype=np.uint8)
@@ -47,42 +76,125 @@ def spins_to_image(spins):
     rgb_array[spins == -1] = [0, 0, 0]       # black
     img = Image.fromarray(rgb_array, mode='RGB')
     img = img.resize((L * scale, L * scale), resample=Image.NEAREST)
+    return rgb_array
+
+def spins_to_image(spins, flipped_sites, rgb_array):
+    L = spins.shape[0]
+    # Create an RGB image: white = +1, black = -1
+    for x, y in flipped_sites:
+        if spins[x, y] == 1:
+            rgb_array[x, y] = [255, 255, 255]  # white
+        else:
+            rgb_array[x, y] = [0, 0, 0]        # black
+    img = Image.fromarray(rgb_array, mode='RGB')
+    img = img.resize((L * scale, L * scale), resample=Image.NEAREST)
     return img
-
-def run_simulation():
-    global spins, T, J, Acceptance, label_img, label
-    spins, Acceptance, flipped_sites = sweep(spins, T, J, Acceptance)
-
-    pil_img = spins_to_image(spins)
-    label_img = ImageTk.PhotoImage(pil_img)
-    label.configure(image=label_img)
-
-    root.after(5, run_simulation)
-
-root = tk.Tk()
-root.title("Ising Model GUI")
-
-img = tk.PhotoImage(width=L, height=L)
-label = tk.Label(root, image=img)
-label.pack()
-
-temp_slider = tk.Scale(root, from_=0.1, to=5.0, resolution=0.01, orient=tk.HORIZONTAL, label="Temperature T")
-temp_slider.set(T)
-temp_slider.pack()
 
 def update_temp(val):
     global T
     T = float(val)
-temp_slider.config(command=update_temp)
-
-coupling_slider = tk.Scale(root, from_=-2.0, to=2.0, resolution=0.01, orient=tk.HORIZONTAL, label="Coupling J")
-coupling_slider.set(J)
-coupling_slider.pack()
+    temp_entry.delete(0, tk.END)
+    temp_entry.insert(0, f"{T:.2f}")
 
 def update_coupling(val):
     global J
     J = float(val)
-coupling_slider.config(command=update_coupling)
+    coupling_entry.delete(0, tk.END)
+    coupling_entry.insert(0, f"{J:.2f}")
 
+def update_temp_entry(val):
+    try:
+        T_val = float(val)
+        if 0.1 <= T_val <= 5.0:
+            temp_slider.set(T_val)
+    except ValueError:
+        pass
+
+def update_coupling_entry(val):
+    try:
+        J_val = float(val)
+        if -2.0 <= J_val <= 2.0:
+            coupling_slider.set(J_val)
+    except ValueError:
+        pass
+
+def run_simulation():
+    global spins, T, J, Acceptance, label_img, label, E, M, L
+    global count
+    spins, Acceptance, flipped_sites, E, M = sweep(spins, T, J, Acceptance, E, M)
+
+    pil_img = spins_to_image(spins, flipped_sites, rgb_array)
+    label_img = ImageTk.PhotoImage(pil_img)
+    label.configure(image=label_img)
+
+    count = (count + 1) % 8
+    if count == 0:
+        data_buffer.append(M / L**2)
+        line.set_ydata(list(data_buffer) + [0] * (100 - len(data_buffer)))
+        canvas.draw()
+
+    root.after(5, run_simulation)
+
+rgb_array = spins_to_image_init(spins)
+
+## Set up the GUI
+# Create the main window
+root = tk.Tk()
+root.title("Ising Model GUI")
+
+# Create the image frame and set it to the left side of the window
+image_frame = ttk.Frame(root)
+image_frame.pack(side=tk.LEFT)
+
+img = tk.PhotoImage(width=L, height=L)
+label = ttk.Label(image_frame, image=img)
+label.pack()
+
+# Create the slider frame and set it to the right side of the window
+slider_frame = ttk.Frame(root)
+slider_frame.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True)
+
+plot_frame = ttk.Frame(slider_frame)
+plot_frame.grid(row=2, column=0, columnspan=3, padx=5, pady=5)
+
+fig, ax = plt.subplots(figsize=(5, 2.5), dpi=100)
+canvas = FigureCanvasTkAgg(fig, master=plot_frame)
+canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
+
+# Data buffer for live plot (e.g. tracking magnetization or acceptance)
+data_buffer = deque(maxlen=100)
+x_vals = list(range(100))
+line, = ax.plot(x_vals, [0]*100)
+ax.set_ylim(-1, 1)
+ax.set_title("Live Magnetization (M/$L^2$)")
+ax.set_xlabel("Time")
+ax.set_ylabel("Value")
+fig.tight_layout()
+
+# Create the sliders and add them to the slider frame
+temp_label = ttk.Label(slider_frame, text="Temperature (T):")
+temp_label.grid(row=0, column=0, padx=5, pady=5)
+temp_slider = ttk.Scale(slider_frame, from_=0.1, to=5.0, orient=tk.HORIZONTAL, value=T)
+temp_slider.grid(row=0, column=1, padx=5, pady=5)
+temp_slider.config(command=update_temp)
+temp_entry = ttk.Entry(slider_frame, width=5)
+temp_entry.insert(0, str(T))  # set initial value
+temp_entry.bind("<Return>", lambda event: update_temp_entry(temp_entry.get()))
+temp_entry.grid(row=0, column=2, padx=5, pady=5)
+
+
+coupling_label = ttk.Label(slider_frame, text="Coupling (J):")
+coupling_label.grid(row=1, column=0, padx=5, pady=5)
+coupling_slider = ttk.Scale(slider_frame, from_=-2.0, to=2.0, orient=tk.HORIZONTAL, value=J)
+coupling_slider.grid(row=1, column=1, padx=5, pady=5)
+coupling_slider.config(command=update_coupling)
+coupling_entry = ttk.Entry(slider_frame, width=5)
+coupling_entry.insert(0, str(J))  # set initial value
+coupling_entry.bind("<Return>", lambda event: update_coupling_entry(coupling_entry.get()))
+coupling_entry.grid(row=1, column=2, padx=5, pady=5)
+
+
+
+# run the window and simulation
 root.after(5, run_simulation)
 root.mainloop()
