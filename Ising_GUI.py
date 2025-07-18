@@ -26,15 +26,6 @@ Acceptance = 0 # initialize acceptance counter
 sweepcount = 1
 
 # define functions to calculate energy and magnetization
-# @jit(nopython=True)
-# def Energy(spins,J):
-#   # Calculates the energy of a given lattice configuration. 
-#   TotalEnergy=0
-#   side = len(spins)
-#   for i in prange(side):
-#     for j in prange(side):
-#       TotalEnergy+= -J * (spins[i,j] * (spins[(i+1)%side,j] + spins[i,(j+1)%side]))
-#   return TotalEnergy
 @jit(nopython=True)
 def Energy(spins,J):
   # Calculates the energy of a given lattice configuration. 
@@ -42,8 +33,8 @@ def Energy(spins,J):
   side = len(spins)
   for i in prange(side):
     for j in prange(side):
-      TotalEnergy+= -J * (spins[i,j] * (spins[i-1,j] + spins[(i+1)%side,j] + spins[i,j-1] + spins[i,(j+1)%side]))
-  return TotalEnergy/2
+      TotalEnergy+= -J * (spins[i,j] * (spins[(i+1)%side,j] + spins[i,(j+1)%side]))
+  return TotalEnergy
 
 @jit(nopython=True)
 def Mag(spins): 
