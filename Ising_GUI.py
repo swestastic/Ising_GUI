@@ -136,6 +136,9 @@ def update_plot_choice(event):
     elif plot_observable == "Magnetization":
         ax.set_ylabel("Magnetization (M/$L^2$)")
         ax.set_ylim(-1, 1)
+    elif plot_observable == "Acceptance":
+        ax.set_ylabel("Acceptance")
+        ax.set_ylim(0, 1)
     data_buffer.clear()
     line.set_ydata([0]*100)
     ax.set_title(f"Live {plot_observable} Vs. Time")
@@ -161,6 +164,8 @@ def run_simulation():
             data_buffer.append(E / L**2)
         elif plot_observable == "Magnetization":
             data_buffer.append(M / L**2)
+        elif plot_observable == "Acceptance":
+            data_buffer.append(Acceptance / sweepcount)
         line.set_ydata(list(data_buffer) + [0] * (100 - len(data_buffer)))
         canvas.draw()
 
@@ -235,7 +240,7 @@ coupling_entry.grid(row=1, column=2, padx=5, pady=5)
 observable_label = ttk.Label(slider_frame, text="Observable to Plot:")
 observable_label.grid(row=3, column=0, padx=5, pady=5)
 
-observable_dropdown = ttk.Combobox(slider_frame, values=["Magnetization", "Energy"], state="readonly")
+observable_dropdown = ttk.Combobox(slider_frame, values=["Magnetization", "Energy", "Acceptance"], state="readonly")
 observable_dropdown.current(0)
 observable_dropdown.grid(row=3, column=0, columnspan=3, padx=5, pady=5)
 
