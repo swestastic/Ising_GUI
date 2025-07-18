@@ -25,19 +25,11 @@ Simply run `python3 Ising_GUI.py` to open a Tkinter window and run the simulatio
 
 ## Future Work
 
-- Improve the efficiency of the image drawing by storing a persistant version of `rgb_array` and using `flipped_sites` to only update necessary sites, rather than redrawing the entire image from scratch every time
-
 - Add external magnetic field functionality and slider
 
 - Add lattice scale and size adjustments
 
-- Add live plots for energy and magnetization
-
 - Add the ability to save data from simulation runs
-
-- Add wolff and worm algorithm support
-
-- Make the UI a bit nicer
 
 ## Acknowledgements
 
