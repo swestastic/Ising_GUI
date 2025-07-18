@@ -14,16 +14,18 @@ from collections import deque
 
 scale = 8 # scaling factor for display
 simulation_update_delay = 5 # milliseconds between updates
-plot_update_delay = 100  # ms
-count = 0
+
 plot_observable = "Magnetization"
+algorithm = "Metropolis" # "Metropolis" or "Wolff"
 
 # parameters
 L = 50 # lattice size (LxL)
-T = 2.27 # temperature
+T = 2.26918531421 # temperature
 J = 1 # coupling constant
+
+count = 0 # counter for plot updates
 Acceptance = 0 # initialize acceptance counter
-sweepcount = 1
+sweepcount = 1 # initialize sweep counter
 
 # define functions to calculate energy and magnetization
 @jit(nopython=True)
@@ -66,6 +68,32 @@ def sweep(spins, T, J, Acceptance, E, M, sweepcount):
 
     return spins, Acceptance, flipped_sites, E, M, sweepcount
 
+@jit(nopython=True)
+def Wolff(spins,T,J,L):
+    attempted=[]
+    x = np.random.randint(L)
+    y = np.random.randint(L) # Pick a random site to start the cluster
+    cluster = [(x,y)]
+    prob = 1-np.exp(-2*J/T)
+
+    for i,j in cluster: # add nearest neighbors to the cluster if they are within the range
+        north = i,(j+1)%L
+        south = i,(j-1)%L
+        east = (i+1)%L,j
+        west = (i-1)%L,j
+        neighbors = [north,south,east,west]
+        
+        for k in neighbors:
+            if tuple((i,j,k[0],k[1])) not in attempted:
+                attempted.append(tuple((i,j,k[0],k[1])))
+                if k not in cluster and spins[i,j]==spins[k] and np.random.rand() < prob:
+                    cluster.append(k)
+    
+    for x,y in cluster:
+        spins[x,y] *= -1
+    ClusterSize = len(cluster)
+    return spins, cluster 
+
 def spins_to_image_init(spins):
     L = spins.shape[0]
     # Create an RGB image: white = +1, black = -1
@@ -97,35 +125,35 @@ def reset_for_parameter_change():
 
 def update_temp(val):
     global T
-    reset_for_parameter_change()
     T = float(val)
     temp_entry.delete(0, tk.END)
     temp_entry.insert(0, f"{T:.2f}")
+    reset_for_parameter_change()
 
 def update_coupling(val):
     global J
-    reset_for_parameter_change()
     J = float(val)
     coupling_entry.delete(0, tk.END)
     coupling_entry.insert(0, f"{J:.2f}")
+    reset_for_parameter_change()
 
 def update_temp_entry(val):
-    reset_for_parameter_change()
     try:
         T_val = float(val)
         if 0.1 <= T_val <= 5.0:
             temp_slider.set(T_val)
     except ValueError:
         pass
+    reset_for_parameter_change()
 
 def update_coupling_entry(val):
-    reset_for_parameter_change()
     try:
         J_val = float(val)
         if -2.0 <= J_val <= 2.0:
             coupling_slider.set(J_val)
     except ValueError:
         pass
+    reset_for_parameter_change()
 
 def update_plot_choice(event):
     global data_buffer, line, plot_observable, sweepcount
@@ -144,21 +172,37 @@ def update_plot_choice(event):
     ax.set_title(f"Live {plot_observable} Vs. Time")
     canvas.draw()
 
+def update_observable_labels():
+    energy_label.config(text=f"Energy / (L^2 J): {E / (L**2):.3f}")
+    magnetization_label.config(text=f"Magnetization (M/L^2): {M / (L**2):.3f}")
+    acceptance_label.config(text=f"Acceptance: {Acceptance/sweepcount:.3f}")
+    root.after(50, update_observable_labels)
+
+def update_algorithm_choice(event):
+    global algorithm
+    algorithm = algorithm_dropdown.get()
+    # reset_for_parameter_change()
+
 def run_simulation():
     # This is our main simulation loop, called every few milliseconds by Tkinter's after method. 
     # It performs a sweep of the lattice, updates the image and the plot.
     global spins, T, J, Acceptance, label_img, label, E, M, L, plot_observable, sweepcount
-    global count
+    global count, algorithm
 
-    spins, Acceptance, flipped_sites, E, M, sweepcount = sweep(spins, T, J, Acceptance, E, M, sweepcount)
+    if algorithm == "Metropolis":
+        spins, Acceptance, flipped_sites, E, M, sweepcount = sweep(spins, T, J, Acceptance, E, M, sweepcount)
+    elif algorithm == "Wolff":
+        spins, flipped_sites = Wolff(spins, T, J, L)
+        E = Energy(spins,J)
+        M = Mag(spins)
 
     # update the image
     pil_img = spins_to_image(spins, flipped_sites, rgb_array)
     label_img = ImageTk.PhotoImage(pil_img)
     label.configure(image=label_img)
 
-    # update the plot after 8 run_simulation calls (~40ms)
-    count = (count + 1) % 8
+    # update the plot after 2 run_simulation calls (~10ms)
+    count = (count + 1) % 2
     if count == 0:
         if plot_observable == "Energy":
             data_buffer.append(E / L**2)
@@ -246,20 +290,22 @@ observable_dropdown.grid(row=3, column=0, columnspan=3, padx=5, pady=5)
 
 observable_dropdown.bind("<<ComboboxSelected>>", update_plot_choice)
 
-values_label = ttk.Label(slider_frame, text="Current Values:")
-values_label.grid(row=4, column=0, columnspan=3, padx=5, pady=5)
 acceptance_label = ttk.Label(slider_frame, text=f"Acceptance: {Acceptance/sweepcount:.3f}")
-acceptance_label.grid(row=5, column=0, columnspan=3, padx=5, pady=5)
+acceptance_label.grid(row=4, column=0, columnspan=3, padx=5, pady=5)
 
 energy_label = ttk.Label(slider_frame, text=f"Energy / (L^2 J): {E / (L**2):.3f}")
-energy_label.grid(row=6, column=0, columnspan=3, padx=5, pady=5)
+energy_label.grid(row=5, column=0, columnspan=3, padx=5, pady=5)
 magnetization_label = ttk.Label(slider_frame, text=f"Magnetization (M/L^2): {M / (L**2):.3f}")
-magnetization_label.grid(row=7, column=0, columnspan=3, padx=5, pady=5)
-def update_observable_labels():
-    energy_label.config(text=f"Energy / (L^2 J): {E / (L**2):.3f}")
-    magnetization_label.config(text=f"Magnetization (M/L^2): {M / (L**2):.3f}")
-    acceptance_label.config(text=f"Acceptance: {Acceptance/sweepcount:.3f}")
-    root.after(50, update_observable_labels)
+magnetization_label.grid(row=6, column=0, columnspan=3, padx=5, pady=5)
+
+
+algorithm_label = ttk.Label(slider_frame, text="Algorithm:")
+algorithm_label.grid(row=7, column=0, padx=5, pady=5)
+algorithm_dropdown = ttk.Combobox(slider_frame, values=["Metropolis", "Wolff"], state="readonly")
+algorithm_dropdown.current(0)
+algorithm_dropdown.grid(row=7, column=0, columnspan=3, padx=5, pady=5)
+
+algorithm_dropdown.bind("<<ComboboxSelected>>", update_algorithm_choice)
 
 
 # run the window and simulation
