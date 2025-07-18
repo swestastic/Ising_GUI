@@ -42,11 +42,6 @@ def Mag(spins):
   M = np.sum(spins)
   return M
 
-# initialize spins randomly
-spins = np.random.choice([-1, 1], size=(L, L))
-E = Energy(spins,J)
-M = Mag(spins)
-
 # define a sweep function
 @jit(nopython=True)
 def sweep(spins, T, J, Acceptance, E, M, sweepcount):
@@ -93,27 +88,29 @@ def spins_to_image(spins, flipped_sites, rgb_array):
     img = img.resize((L * scale, L * scale), resample=Image.NEAREST)
     return img
 
-def reset_acceptance():
-    global Acceptance, sweepcount
+def reset_for_parameter_change():
+    global Acceptance, sweepcount, E, M
     Acceptance = 0
     sweepcount = 1
+    E = Energy(spins,J)
+    M = Mag(spins)
 
 def update_temp(val):
     global T
-    reset_acceptance()
+    reset_for_parameter_change()
     T = float(val)
     temp_entry.delete(0, tk.END)
     temp_entry.insert(0, f"{T:.2f}")
 
 def update_coupling(val):
     global J
-    reset_acceptance()
+    reset_for_parameter_change()
     J = float(val)
     coupling_entry.delete(0, tk.END)
     coupling_entry.insert(0, f"{J:.2f}")
 
 def update_temp_entry(val):
-    reset_acceptance()
+    reset_for_parameter_change()
     try:
         T_val = float(val)
         if 0.1 <= T_val <= 5.0:
@@ -122,7 +119,7 @@ def update_temp_entry(val):
         pass
 
 def update_coupling_entry(val):
-    reset_acceptance()
+    reset_for_parameter_change()
     try:
         J_val = float(val)
         if -2.0 <= J_val <= 2.0:
@@ -130,9 +127,26 @@ def update_coupling_entry(val):
     except ValueError:
         pass
 
+def update_plot_choice(event):
+    global data_buffer, line, plot_observable, sweepcount
+    plot_observable = observable_dropdown.get()
+    if plot_observable == "Energy":
+        ax.set_ylabel("Energy / (L^2 J)")
+        ax.set_ylim(-2, 2)
+    elif plot_observable == "Magnetization":
+        ax.set_ylabel("Magnetization (M/$L^2$)")
+        ax.set_ylim(-1, 1)
+    data_buffer.clear()
+    line.set_ydata([0]*100)
+    ax.set_title(f"Live {plot_observable} Vs. Time")
+    canvas.draw()
+
 def run_simulation():
+    # This is our main simulation loop, called every few milliseconds by Tkinter's after method. 
+    # It performs a sweep of the lattice, updates the image and the plot.
     global spins, T, J, Acceptance, label_img, label, E, M, L, plot_observable, sweepcount
     global count
+
     spins, Acceptance, flipped_sites, E, M, sweepcount = sweep(spins, T, J, Acceptance, E, M, sweepcount)
 
     # update the image
@@ -152,6 +166,12 @@ def run_simulation():
 
     root.after(5, run_simulation)
 
+# initialize spins randomly
+spins = np.random.choice([-1, 1], size=(L, L))
+E = Energy(spins,J)
+M = Mag(spins)
+
+# initialize the RGB image array
 rgb_array = spins_to_image_init(spins)
 
 ## Set up the GUI
@@ -174,6 +194,8 @@ slider_frame.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True)
 plot_frame = ttk.Frame(slider_frame)
 plot_frame.grid(row=2, column=0, columnspan=3, padx=5, pady=5)
 
+# Create the matplotlib figure and axis for plotting
+plt.style.use('fast')
 fig, ax = plt.subplots(figsize=(5, 2.5), dpi=100)
 canvas = FigureCanvasTkAgg(fig, master=plot_frame)
 canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
@@ -216,19 +238,7 @@ observable_label.grid(row=3, column=0, padx=5, pady=5)
 observable_dropdown = ttk.Combobox(slider_frame, values=["Magnetization", "Energy"], state="readonly")
 observable_dropdown.current(0)
 observable_dropdown.grid(row=3, column=0, columnspan=3, padx=5, pady=5)
-def update_plot_choice(event):
-    global data_buffer, line, plot_observable, sweepcount
-    plot_observable = observable_dropdown.get()
-    if plot_observable == "Energy":
-        ax.set_ylabel("Energy / (L^2 J)")
-        ax.set_ylim(-2, 2)
-    elif plot_observable == "Magnetization":
-        ax.set_ylabel("Magnetization (M/$L^2$)")
-        ax.set_ylim(-1, 1)
-    data_buffer.clear()
-    line.set_ydata([0]*100)
-    ax.set_title(f"Live {plot_observable} Vs. Time")
-    canvas.draw()
+
 observable_dropdown.bind("<<ComboboxSelected>>", update_plot_choice)
 
 values_label = ttk.Label(slider_frame, text="Current Values:")
