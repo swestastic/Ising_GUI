@@ -44,9 +44,9 @@ def Mag(spins):
   M = np.sum(spins)
   return M
 
-# define a sweep function
+# Define Monte Carlo update algorithms
 @jit(nopython=True)
-def sweep(spins, T, J, Acceptance, E, M, sweepcount):
+def Metropolis(spins, T, J, Acceptance, E, M, sweepcount):
     # Metropolis single spin flip algorithm. We first pick a random site (x,y) and then calculate the change 
     # in energy if we were to flip it (up->down or down->up). We then draw a number to see if the move is accepted.
     # If it is, then we update the value in the lattice and update the energy, magnetization, and acceptances. 
@@ -93,6 +93,29 @@ def Wolff(spins,T,J,L):
         spins[x,y] *= -1
     ClusterSize = len(cluster)
     return spins, cluster 
+
+@jit(nopython=True)
+def Glauber(spins, T, J, Acceptance, E, M, sweepcount):
+    # Glauber heat bath algorithm. We first pick a random site (x,y) and then calculate the change 
+    # in energy if we were to flip it (up->down or down->up). We then draw a number to see if the move is accepted.
+    # If it is, then we update the value in the lattice and update the energy, magnetization, and acceptances. 
+    flipped_sites = []
+    L = spins.shape[0]
+    sweepcount += L**2
+    for j in prange(L**2):
+        x=np.random.randint(L) #get a random position to update in the lattice
+        y=np.random.randint(L)
+
+        dE = 2*J*spins[x,y]*(spins[(x-1)%L,y]+spins[(x+1)%L,y]+spins[x,(y-1)%L]+spins[x,(y+1)%L])
+
+        if np.random.random() < 1/(1+np.exp(dE/T)):# Incrementing the energy and magnetization if the move is accepted
+            spins[x,y]*=-1 # update the value in the lattice
+            Acceptance += 1 # increment acceptance counter
+            flipped_sites.append((x,y))
+            E += dE
+            M += 2*spins[x,y]
+
+    return spins, Acceptance, flipped_sites, E, M, sweepcount
 
 def spins_to_image_init(spins):
     L = spins.shape[0]
@@ -190,11 +213,13 @@ def run_simulation():
     global count, algorithm
 
     if algorithm == "Metropolis":
-        spins, Acceptance, flipped_sites, E, M, sweepcount = sweep(spins, T, J, Acceptance, E, M, sweepcount)
+        spins, Acceptance, flipped_sites, E, M, sweepcount = Metropolis(spins, T, J, Acceptance, E, M, sweepcount)
     elif algorithm == "Wolff":
         spins, flipped_sites = Wolff(spins, T, J, L)
         E = Energy(spins,J)
         M = Mag(spins)
+    elif algorithm == "Glauber":
+        spins, Acceptance, flipped_sites, E, M, sweepcount = Glauber(spins, T, J, Acceptance, E, M, sweepcount)
 
     # update the image
     pil_img = spins_to_image(spins, flipped_sites, rgb_array)
@@ -301,7 +326,7 @@ magnetization_label.grid(row=6, column=0, columnspan=3, padx=5, pady=5)
 
 algorithm_label = ttk.Label(slider_frame, text="Algorithm:")
 algorithm_label.grid(row=7, column=0, padx=5, pady=5)
-algorithm_dropdown = ttk.Combobox(slider_frame, values=["Metropolis", "Wolff"], state="readonly")
+algorithm_dropdown = ttk.Combobox(slider_frame, values=["Metropolis", "Wolff", "Glauber"], state="readonly")
 algorithm_dropdown.current(0)
 algorithm_dropdown.grid(row=7, column=0, columnspan=3, padx=5, pady=5)
 
