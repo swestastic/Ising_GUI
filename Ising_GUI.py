@@ -149,17 +149,16 @@ def SwendsenWang(spins, T, J, L):
 
     return spins, flipped_sites[:flip_count]
 
+@jit(nopython=True)
 def Kawasaki(spins, T, J, L):
     flipped_sites = []
     for i in range(L**2):
-        x1 = np.random.randint(L)
-        y1 = np.random.randint(L)
+        x1 = np.random.randint(0,L)
+        y1 = np.random.randint(0,L)
         neighbors = [((x1+1)%L,y1),((x1-1)%L,y1),(x1,(y1+1)%L),(x1,(y1-1)%L)]
         # check if a random neighbor has the opposite spin
-        x2,y2 = random.choice(neighbors)
-        if spins[x1,y1] == spins[x2,y2]:
-            pass
-        elif spins[x1,y1] != spins[x2,y2]:
+        x2,y2 = neighbors[np.random.randint(0, 4)]
+        if spins[x1,y1] != spins[x2,y2]:
             E1 = Energy(spins,J)
             spins[x1,y1], spins[x2,y2] = spins[x2,y2], spins[x1,y1] # swap the spins
             E2 = Energy(spins,J)
@@ -170,8 +169,6 @@ def Kawasaki(spins, T, J, L):
             else:
                 spins[x1,y1], spins[x2,y2] = spins[x2,y2], spins[x1,y1] # swap back if not accepted
     return spins, flipped_sites
-
-
 
 @jit(nopython=True)
 def Glauber(spins, T, J, Acceptance, E, M, sweepcount):

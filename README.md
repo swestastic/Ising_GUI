@@ -16,7 +16,7 @@ where $J$ is the interaction strength between neighboring sites, $\sigma_i=\pm1$
 
 In two dimensions with no external magnetic field ($h=0$), the model exhibits a phase transition at $T_c = \frac{2J}{k \text{ln}(1+\sqrt{2}}) \approx (2.269185...)\frac{J}{k}$ where $k$ is the Boltzmann constant, which is commonly set to $k=1$. For $J>0$, the model is ferromagnetic, and below $T_c$ will converge to a fully-aligned state. For $J<0$, the model is anti-ferromagnetic and will instead converge to a fully anti-aligned state.
 
-This simulation allows for simulation using the Metropolis-Hastings, Wolff, Swendsen-Wang, Glauber, and Kawasaki methods.
+This app allows for simulation using the Metropolis-Hastings, Wolff, Swendsen-Wang, Glauber, and Kawasaki methods.
 
 The Metropolis-Hastings algorithm is where "flips" are proposed to random sites on the lattice. A "flip" will invert the value on a given site $\sigma_i=\pm1\rightarrow\mp1$.
 A flip will either be accepted or rejected based on a Boltzmann probability, $r<e^{-\Delta E/T}$, where $r$ is a random number drawn on $(0,1)$. Decreases in energy are always accepted, and increases in energy have a chance to be accepted.
