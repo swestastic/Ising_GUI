@@ -4,7 +4,7 @@ from tkinter import ttk
 import numpy as np
 import random
 
-from numba import jit, prange
+from numba import jit
 
 from PIL import Image, ImageTk
 
@@ -33,8 +33,8 @@ def Energy(spins,J):
   # Calculates the energy of a given lattice configuration. 
   TotalEnergy=0
   side = len(spins)
-  for i in prange(side):
-    for j in prange(side):
+  for i in range(side):
+    for j in range(side):
       TotalEnergy+= -J * (spins[i,j] * (spins[(i+1)%side,j] + spins[i,(j+1)%side]))
   return TotalEnergy
 
@@ -53,7 +53,7 @@ def Metropolis(spins, T, J, Acceptance, E, M, sweepcount):
     flipped_sites = []
     L = spins.shape[0]
     sweepcount += L**2
-    for j in prange(L**2):
+    for j in range(L**2):
         x=np.random.randint(L) #get a random position to update in the lattice
         y=np.random.randint(L)
 
@@ -92,7 +92,86 @@ def Wolff(spins,T,J,L):
     for x,y in cluster:
         spins[x,y] *= -1
     ClusterSize = len(cluster)
-    return spins, cluster 
+    return spins, cluster # here cluster = flipped_sites
+
+@jit(nopython=True)
+def SwendsenWang(spins, T, J, L):
+    L = spins.shape[0]
+    bonds = np.zeros((L, L, 4), dtype=np.uint8)  # 0: up, 1: down, 2: left, 3: right
+    p = 1 - np.exp(-2 * J / T)
+
+    # Build bonds
+    for i in range(L):
+        for j in range(L):
+            if spins[i, j] == spins[(i+1)%L, j] and np.random.rand() < p:
+                bonds[i, j, 0] = 1  # bond to down
+            if spins[i, j] == spins[(i-1)%L, j] and np.random.rand() < p:
+                bonds[i, j, 1] = 1  # bond to up
+            if spins[i, j] == spins[i, (j-1)%L] and np.random.rand() < p:
+                bonds[i, j, 2] = 1  # bond to left
+            if spins[i, j] == spins[i, (j+1)%L] and np.random.rand() < p:
+                bonds[i, j, 3] = 1  # bond to right
+
+    visited = np.zeros((L, L), dtype=np.uint8)
+    flipped_sites = np.full((L * L, 2), -1, dtype=np.int32)
+    flip_count = 0
+
+    for i in range(L):
+        for j in range(L):
+            if visited[i, j] == 0:
+                # Begin new cluster
+                cluster = np.full((L*L, 2), -1, dtype=np.int32)
+                cluster[0, 0], cluster[0, 1] = i, j
+                visited[i, j] = 1
+                cluster_size = 1
+                k = 0
+                while k < cluster_size:
+                    x, y = cluster[k]
+                    neighbors = [((x+1)%L, y, 0),
+                                 ((x-1)%L, y, 1),
+                                 (x, (y-1)%L, 2),
+                                 (x, (y+1)%L, 3)]
+                    for a, b, d in neighbors:
+                        if bonds[x, y, d] == 1 and visited[a, b] == 0:
+                            visited[a, b] = 1
+                            cluster[cluster_size, 0] = a
+                            cluster[cluster_size, 1] = b
+                            cluster_size += 1
+                    k += 1
+                # Flip with 50% probability
+                if np.random.rand() < 0.5:
+                    for m in range(cluster_size):
+                        x, y = cluster[m]
+                        spins[x, y] *= -1
+                        flipped_sites[flip_count, 0] = x
+                        flipped_sites[flip_count, 1] = y
+                        flip_count += 1
+
+    return spins, flipped_sites[:flip_count]
+
+def Kawasaki(spins, T, J, L):
+    flipped_sites = []
+    for i in range(L**2):
+        x1 = np.random.randint(L)
+        y1 = np.random.randint(L)
+        neighbors = [((x1+1)%L,y1),((x1-1)%L,y1),(x1,(y1+1)%L),(x1,(y1-1)%L)]
+        # check if a random neighbor has the opposite spin
+        x2,y2 = random.choice(neighbors)
+        if spins[x1,y1] == spins[x2,y2]:
+            pass
+        elif spins[x1,y1] != spins[x2,y2]:
+            E1 = Energy(spins,J)
+            spins[x1,y1], spins[x2,y2] = spins[x2,y2], spins[x1,y1] # swap the spins
+            E2 = Energy(spins,J)
+            dE = E2 - E1
+            if dE <= 0 or np.random.random() < np.exp(-dE/T):
+                flipped_sites.append((x1,y1))
+                flipped_sites.append((x2,y2))
+            else:
+                spins[x1,y1], spins[x2,y2] = spins[x2,y2], spins[x1,y1] # swap back if not accepted
+    return spins, flipped_sites
+
+
 
 @jit(nopython=True)
 def Glauber(spins, T, J, Acceptance, E, M, sweepcount):
@@ -102,7 +181,7 @@ def Glauber(spins, T, J, Acceptance, E, M, sweepcount):
     flipped_sites = []
     L = spins.shape[0]
     sweepcount += L**2
-    for j in prange(L**2):
+    for j in range(L**2):
         x=np.random.randint(L) #get a random position to update in the lattice
         y=np.random.randint(L)
 
@@ -182,10 +261,10 @@ def update_plot_choice(event):
     global data_buffer, line, plot_observable, sweepcount
     plot_observable = observable_dropdown.get()
     if plot_observable == "Energy":
-        ax.set_ylabel("Energy / (L^2 J)")
+        ax.set_ylabel("Energy Per Site (E / $L^2$)")
         ax.set_ylim(-2, 2)
     elif plot_observable == "Magnetization":
-        ax.set_ylabel("Magnetization (M/$L^2$)")
+        ax.set_ylabel("Magnetization Per Site (M / $L^2$)")
         ax.set_ylim(-1, 1)
     elif plot_observable == "Acceptance":
         ax.set_ylabel("Acceptance")
@@ -220,6 +299,14 @@ def run_simulation():
         M = Mag(spins)
     elif algorithm == "Glauber":
         spins, Acceptance, flipped_sites, E, M, sweepcount = Glauber(spins, T, J, Acceptance, E, M, sweepcount)
+    elif algorithm == "Swendsen-Wang":
+        spins, flipped_sites = SwendsenWang(spins, T, J, L)
+        E = Energy(spins,J)
+        M = Mag(spins)
+    elif algorithm == "Kawasaki":
+        spins, flipped_sites = Kawasaki(spins, T, J, L)
+        E = Energy(spins,J)
+        M = Mag(spins)
 
     # update the image
     pil_img = spins_to_image(spins, flipped_sites, rgb_array)
@@ -281,7 +368,7 @@ line, = ax.plot(x_vals, [0]*100)
 ax.set_ylim(-1, 1)
 ax.set_title(f"Live {plot_observable} Vs. Time")
 ax.set_xlabel("Time")
-ax.set_ylabel(f"{plot_observable}")
+ax.set_ylabel(f"{plot_observable} per Site")
 fig.tight_layout()
 
 # Create the sliders and add them to the slider frame
@@ -326,7 +413,7 @@ magnetization_label.grid(row=6, column=0, columnspan=3, padx=5, pady=5)
 
 algorithm_label = ttk.Label(slider_frame, text="Algorithm:")
 algorithm_label.grid(row=7, column=0, padx=5, pady=5)
-algorithm_dropdown = ttk.Combobox(slider_frame, values=["Metropolis", "Wolff", "Glauber"], state="readonly")
+algorithm_dropdown = ttk.Combobox(slider_frame, values=["Metropolis", "Wolff", "Glauber", "Swendsen-Wang", "Kawasaki"], state="readonly")
 algorithm_dropdown.current(0)
 algorithm_dropdown.grid(row=7, column=0, columnspan=3, padx=5, pady=5)
 

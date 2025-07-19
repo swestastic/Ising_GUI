@@ -16,8 +16,18 @@ where $J$ is the interaction strength between neighboring sites, $\sigma_i=\pm1$
 
 In two dimensions with no external magnetic field ($h=0$), the model exhibits a phase transition at $T_c = \frac{2J}{k \text{ln}(1+\sqrt{2}}) \approx (2.269185...)\frac{J}{k}$ where $k$ is the Boltzmann constant, which is commonly set to $k=1$. For $J>0$, the model is ferromagnetic, and below $T_c$ will converge to a fully-aligned state. For $J<0$, the model is anti-ferromagnetic and will instead converge to a fully anti-aligned state.
 
-This simulation using the Metropolis-Hastings algorithm, where "flips" are proposed to random sites on the lattice. A "flip" will invert the value on a given site $\sigma_i=\pm1\rightarrow\mp1$.
+This simulation allows for simulation using the Metropolis-Hastings, Wolff, Swendsen-Wang, Glauber, and Kawasaki methods.
+
+The Metropolis-Hastings algorithm is where "flips" are proposed to random sites on the lattice. A "flip" will invert the value on a given site $\sigma_i=\pm1\rightarrow\mp1$.
 A flip will either be accepted or rejected based on a Boltzmann probability, $r<e^{-\Delta E/T}$, where $r$ is a random number drawn on $(0,1)$. Decreases in energy are always accepted, and increases in energy have a chance to be accepted.
+
+The Glauber, or "Heat Bath", algorithm is very similar to the Mtropolis-Hastings one, with the exception that the probability acceptance criteria is different. This criteria is $r < \frac{1}{1+e^{\Delta E/T}}$
+
+The Wolff algorithm works by picking a random site and then attempting to build a cluster made up of neighboring sites with the same spin value $\sigma_i$. Additions to the cluster are based on a probability $r < 1-e^{-2J/T}$. This algorithm is rejection-free, so the cluster is flipped every time.
+
+The Swendsen-Wang algorithm is another cluster method, but instead of building only one cluster, it creates a number of clusters until every site in the lattice has been categorized into a cluster. Adding a site to a cluster is based on a probability $r < 1-e^{-2J/T}$. Each individual cluster is then either flipped or not, based on a probability $r<\frac{1}{2}$.
+
+Finally, the Kawasaki interpretation of the Ising model is unique in that spin is conserved. This means that sites cannot be "flipped", but rather a spin-up site and neighboring spin-down site can switch places in the lattice.
 
 ## Usage
 
