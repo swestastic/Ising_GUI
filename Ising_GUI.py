@@ -1,4 +1,3 @@
-# Look at using https://www.pyqtgraph.org/ for plotting instead of matplotlib
 import tkinter as tk
 from tkinter import ttk
 import numpy as np
@@ -15,13 +14,14 @@ from collections import deque
 scale = 8 # scaling factor for display
 simulation_update_delay = 5 # milliseconds between updates
 
-plot_observable = "Magnetization"
-algorithm = "Metropolis" # "Metropolis" or "Wolff"
+plot_observable = "Magnetization" # "Magnetization", "Energy", "Acceptance"
+algorithm = "Metropolis" # "Metropolis", "Wolff", "Glauber", "Swendsen-Wang", "Kawasaki"
 
 # parameters
 L = 50 # lattice size (LxL)
 T = 2.26918531421 # temperature
 J = 1 # coupling constant
+h = 0
 
 count = 0 # counter for plot updates
 Acceptance = 0 # initialize acceptance counter
@@ -29,13 +29,14 @@ sweepcount = 1 # initialize sweep counter
 
 # define functions to calculate energy and magnetization
 @jit(nopython=True)
-def Energy(spins,J):
+def Energy(spins,J, h):
   # Calculates the energy of a given lattice configuration. 
   TotalEnergy=0
   side = len(spins)
   for i in range(side):
     for j in range(side):
       TotalEnergy+= -J * (spins[i,j] * (spins[(i+1)%side,j] + spins[i,(j+1)%side]))
+      TotalEnergy+= -h * spins[i,j] # add external field contribution
   return TotalEnergy
 
 @jit(nopython=True)
@@ -46,7 +47,7 @@ def Mag(spins):
 
 # Define Monte Carlo update algorithms
 @jit(nopython=True)
-def Metropolis(spins, T, J, Acceptance, E, M, sweepcount):
+def Metropolis(spins, T, J, h, E, M, Acceptance, sweepcount):
     # Metropolis single spin flip algorithm. We first pick a random site (x,y) and then calculate the change 
     # in energy if we were to flip it (up->down or down->up). We then draw a number to see if the move is accepted.
     # If it is, then we update the value in the lattice and update the energy, magnetization, and acceptances. 
@@ -57,7 +58,14 @@ def Metropolis(spins, T, J, Acceptance, E, M, sweepcount):
         x=np.random.randint(L) #get a random position to update in the lattice
         y=np.random.randint(L)
 
-        dE = 2*J*spins[x,y]*(spins[(x-1)%L,y]+spins[(x+1)%L,y]+spins[x,(y-1)%L]+spins[x,(y+1)%L])
+        dE = 2 * spins[x, y] * (
+            J * (
+                spins[(x-1)%L, y] +
+                spins[(x+1)%L, y] +
+                spins[x, (y-1)%L] +
+                spins[x, (y+1)%L]
+            ) + h
+        )
 
         if np.random.random() < np.exp(-dE/T):# Incrementing the energy and magnetization if the move is accepted
             spins[x,y]*=-1 # update the value in the lattice
@@ -69,7 +77,7 @@ def Metropolis(spins, T, J, Acceptance, E, M, sweepcount):
     return spins, Acceptance, flipped_sites, E, M, sweepcount
 
 @jit(nopython=True)
-def Wolff(spins,T,J,L):
+def Wolff(spins,T,J,L, h):
     attempted=[]
     x = np.random.randint(L)
     y = np.random.randint(L) # Pick a random site to start the cluster
@@ -95,7 +103,7 @@ def Wolff(spins,T,J,L):
     return spins, cluster # here cluster = flipped_sites
 
 @jit(nopython=True)
-def SwendsenWang(spins, T, J, L):
+def SwendsenWang(spins, T, J, h):
     L = spins.shape[0]
     bonds = np.zeros((L, L, 4), dtype=np.uint8)  # 0: up, 1: down, 2: left, 3: right
     p = 1 - np.exp(-2 * J / T)
@@ -150,8 +158,9 @@ def SwendsenWang(spins, T, J, L):
     return spins, flipped_sites[:flip_count]
 
 @jit(nopython=True)
-def Kawasaki(spins, T, J, L):
+def Kawasaki(spins, T, J, h):
     flipped_sites = []
+    L = spins.shape[0]
     for i in range(L**2):
         x1 = np.random.randint(0,L)
         y1 = np.random.randint(0,L)
@@ -159,9 +168,9 @@ def Kawasaki(spins, T, J, L):
         # check if a random neighbor has the opposite spin
         x2,y2 = neighbors[np.random.randint(0, 4)]
         if spins[x1,y1] != spins[x2,y2]:
-            E1 = Energy(spins,J)
+            E1 = Energy(spins,J,h)
             spins[x1,y1], spins[x2,y2] = spins[x2,y2], spins[x1,y1] # swap the spins
-            E2 = Energy(spins,J)
+            E2 = Energy(spins,J,h)
             dE = E2 - E1
             if dE <= 0 or np.random.random() < np.exp(-dE/T):
                 flipped_sites.append((x1,y1))
@@ -171,8 +180,8 @@ def Kawasaki(spins, T, J, L):
     return spins, flipped_sites
 
 @jit(nopython=True)
-def Glauber(spins, T, J, Acceptance, E, M, sweepcount):
-    # Glauber heat bath algorithm. We first pick a random site (x,y) and then calculate the change 
+def Glauber(spins, T, J, h, E, M, Acceptance, sweepcount):
+    # Glauber heat bath algorithm. We first pick a random site (x,y) and then calculate the change
     # in energy if we were to flip it (up->down or down->up). We then draw a number to see if the move is accepted.
     # If it is, then we update the value in the lattice and update the energy, magnetization, and acceptances. 
     flipped_sites = []
@@ -182,7 +191,14 @@ def Glauber(spins, T, J, Acceptance, E, M, sweepcount):
         x=np.random.randint(L) #get a random position to update in the lattice
         y=np.random.randint(L)
 
-        dE = 2*J*spins[x,y]*(spins[(x-1)%L,y]+spins[(x+1)%L,y]+spins[x,(y-1)%L]+spins[x,(y+1)%L])
+        dE = 2 * spins[x, y] * (
+            J * (
+                spins[(x-1)%L, y] +
+                spins[(x+1)%L, y] +
+                spins[x, (y-1)%L] +
+                spins[x, (y+1)%L]
+            ) + h
+        )
 
         if np.random.random() < 1/(1+np.exp(dE/T)):# Incrementing the energy and magnetization if the move is accepted
             spins[x,y]*=-1 # update the value in the lattice
@@ -219,7 +235,7 @@ def reset_for_parameter_change():
     global Acceptance, sweepcount, E, M
     Acceptance = 0
     sweepcount = 1
-    E = Energy(spins,J)
+    E = Energy(spins,J,h)
     M = Mag(spins)
 
 def update_temp(val):
@@ -236,6 +252,13 @@ def update_coupling(val):
     coupling_entry.insert(0, f"{J:.2f}")
     reset_for_parameter_change()
 
+def update_magneticfield(val):
+    global h
+    h = float(val)
+    magneticfield_entry.delete(0, tk.END)
+    magneticfield_entry.insert(0, f"{h:.2f}")
+    reset_for_parameter_change()
+
 def update_temp_entry(val):
     try:
         T_val = float(val)
@@ -250,6 +273,15 @@ def update_coupling_entry(val):
         J_val = float(val)
         if -2.0 <= J_val <= 2.0:
             coupling_slider.set(J_val)
+    except ValueError:
+        pass
+    reset_for_parameter_change()
+
+def update_magneticfield_entry(val):
+    try:
+        h_val = float(val)
+        if -2.0 <= h_val <= 2.0:
+            magneticfield_slider.set(h_val)
     except ValueError:
         pass
     reset_for_parameter_change()
@@ -278,8 +310,17 @@ def update_observable_labels():
     root.after(50, update_observable_labels)
 
 def update_algorithm_choice(event):
-    global algorithm
+    global algorithm, magneticfield_entry, magneticfield_slider
     algorithm = algorithm_dropdown.get()
+    if algorithm == "Kawasaki" or algorithm == "Wolff" or algorithm == "Swendsen-Wang":
+        magneticfield_entry.insert(0, 0)  # set initial value
+        magneticfield_slider.set(0)
+        magneticfield_entry.config(state=tk.DISABLED)
+        magneticfield_slider.config(state=tk.DISABLED)
+    else:
+        magneticfield_entry.config(state=tk.NORMAL)
+        magneticfield_slider.config(state=tk.NORMAL)
+    
     # reset_for_parameter_change()
 
 def run_simulation():
@@ -289,21 +330,21 @@ def run_simulation():
     global count, algorithm
 
     if algorithm == "Metropolis":
-        spins, Acceptance, flipped_sites, E, M, sweepcount = Metropolis(spins, T, J, Acceptance, E, M, sweepcount)
+        spins, Acceptance, flipped_sites, E, M, sweepcount = Metropolis(spins, T, J, h, E, M, Acceptance, sweepcount)
     elif algorithm == "Wolff":
-        spins, flipped_sites = Wolff(spins, T, J, L)
-        E = Energy(spins,J)
+        spins, flipped_sites = Wolff(spins, T, J, L, h)
+        E = Energy(spins,J,h)
         M = Mag(spins)
     elif algorithm == "Glauber":
-        spins, Acceptance, flipped_sites, E, M, sweepcount = Glauber(spins, T, J, Acceptance, E, M, sweepcount)
+        spins, Acceptance, flipped_sites, E, M, sweepcount = Glauber(spins, T, J, h, E, M, Acceptance, sweepcount)
     elif algorithm == "Swendsen-Wang":
-        spins, flipped_sites = SwendsenWang(spins, T, J, L)
-        E = Energy(spins,J)
+        spins, flipped_sites = SwendsenWang(spins, T, J, h)
+        E = Energy(spins,J,h)
         M = Mag(spins)
     elif algorithm == "Kawasaki":
-        spins, flipped_sites = Kawasaki(spins, T, J, L)
-        E = Energy(spins,J)
-        M = Mag(spins)
+        spins, flipped_sites = Kawasaki(spins, T, J, h)
+        E = Energy(spins,J,h)
+        # M = Mag(spins) # magnetization does not change in Kawasaki
 
     # update the image
     pil_img = spins_to_image(spins, flipped_sites, rgb_array)
@@ -326,7 +367,7 @@ def run_simulation():
 
 # initialize spins randomly
 spins = np.random.choice([-1, 1], size=(L, L))
-E = Energy(spins,J)
+E = Energy(spins,J,h)
 M = Mag(spins)
 
 # initialize the RGB image array
@@ -350,7 +391,7 @@ slider_frame = ttk.Frame(root)
 slider_frame.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True)
 
 plot_frame = ttk.Frame(slider_frame)
-plot_frame.grid(row=2, column=0, columnspan=3, padx=5, pady=5)
+plot_frame.grid(row=3, column=0, columnspan=3, padx=5, pady=5)
 
 # Create the matplotlib figure and axis for plotting
 plt.style.use('fast')
@@ -390,29 +431,39 @@ coupling_entry.insert(0, str(J))  # set initial value
 coupling_entry.bind("<Return>", lambda event: update_coupling_entry(coupling_entry.get()))
 coupling_entry.grid(row=1, column=2, padx=5, pady=5)
 
+magneticfield_label = ttk.Label(slider_frame, text="Magnetic Field (h):")
+magneticfield_label.grid(row=2, column=0, padx=5, pady=5)
+magneticfield_slider = ttk.Scale(slider_frame, from_=-2.0, to=2.0, orient=tk.HORIZONTAL, value=h)
+magneticfield_slider.grid(row=2, column=1, padx=5, pady=5)
+magneticfield_slider.config(command=update_magneticfield)
+magneticfield_entry = ttk.Entry(slider_frame, width=5)
+magneticfield_entry.insert(0, str(h))  # set initial value
+magneticfield_entry.bind("<Return>", lambda event: update_magneticfield_entry(magneticfield_entry.get()))
+magneticfield_entry.grid(row=2, column=2, padx=5, pady=5)
+
 observable_label = ttk.Label(slider_frame, text="Observable to Plot:")
-observable_label.grid(row=3, column=0, padx=5, pady=5)
+observable_label.grid(row=4, column=0, padx=5, pady=5)
 
 observable_dropdown = ttk.Combobox(slider_frame, values=["Magnetization", "Energy", "Acceptance"], state="readonly")
 observable_dropdown.current(0)
-observable_dropdown.grid(row=3, column=0, columnspan=3, padx=5, pady=5)
+observable_dropdown.grid(row=4, column=0, columnspan=3, padx=5, pady=5)
 
 observable_dropdown.bind("<<ComboboxSelected>>", update_plot_choice)
 
 acceptance_label = ttk.Label(slider_frame, text=f"Acceptance: {Acceptance/sweepcount:.3f}")
-acceptance_label.grid(row=4, column=0, columnspan=3, padx=5, pady=5)
+acceptance_label.grid(row=5, column=0, columnspan=3, padx=5, pady=5)
 
 energy_label = ttk.Label(slider_frame, text=f"Energy / (L^2 J): {E / (L**2):.3f}")
-energy_label.grid(row=5, column=0, columnspan=3, padx=5, pady=5)
+energy_label.grid(row=6, column=0, columnspan=3, padx=5, pady=5)
 magnetization_label = ttk.Label(slider_frame, text=f"Magnetization (M/L^2): {M / (L**2):.3f}")
-magnetization_label.grid(row=6, column=0, columnspan=3, padx=5, pady=5)
+magnetization_label.grid(row=7, column=0, columnspan=3, padx=5, pady=5)
 
 
 algorithm_label = ttk.Label(slider_frame, text="Algorithm:")
-algorithm_label.grid(row=7, column=0, padx=5, pady=5)
+algorithm_label.grid(row=8, column=0, padx=5, pady=5)
 algorithm_dropdown = ttk.Combobox(slider_frame, values=["Metropolis", "Wolff", "Glauber", "Swendsen-Wang", "Kawasaki"], state="readonly")
 algorithm_dropdown.current(0)
-algorithm_dropdown.grid(row=7, column=0, columnspan=3, padx=5, pady=5)
+algorithm_dropdown.grid(row=8, column=0, columnspan=3, padx=5, pady=5)
 
 algorithm_dropdown.bind("<<ComboboxSelected>>", update_algorithm_choice)
 
