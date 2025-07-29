@@ -3,7 +3,7 @@ from tkinter import ttk
 import numpy as np
 import random
 
-from numba import jit
+from numba import njit, prange, float64, int32
 
 from PIL import Image, ImageTk
 
@@ -13,6 +13,9 @@ from collections import deque
 
 scale = 8 # scaling factor for display
 simulation_update_delay = 5 # milliseconds between updates
+
+FASTMATH = True
+PARALLEL = True
 
 plot_observable = "Magnetization" # "Magnetization", "Energy", "Acceptance"
 algorithm = "Metropolis" # "Metropolis", "Wolff", "Glauber", "Swendsen-Wang", "Kawasaki"
@@ -28,25 +31,24 @@ Acceptance = 0 # initialize acceptance counter
 sweepcount = 1 # initialize sweep counter
 
 # define functions to calculate energy and magnetization
-@jit(nopython=True)
+@njit(float64(int32[:,:], float64, float64), parallel=PARALLEL, fastmath=FASTMATH)
 def Energy(spins,J, h):
   # Calculates the energy of a given lattice configuration. 
   TotalEnergy=0
   side = len(spins)
-  for i in range(side):
-    for j in range(side):
-      TotalEnergy+= -J * (spins[i,j] * (spins[(i+1)%side,j] + spins[i,(j+1)%side]))
-      TotalEnergy+= -h * spins[i,j] # add external field contribution
+  for i in prange(side):
+    for j in prange(side):
+      TotalEnergy+= -J * (spins[i,j] * (spins[(i+1)%side,j] + spins[i,(j+1)%side])) - h * spins[i,j]
   return TotalEnergy
 
-@jit(nopython=True)
+@njit(float64(int32[:,:]), fastmath=FASTMATH)
 def Mag(spins): 
   # Calculates the magnetization of a given lattice configuration.
   M = np.sum(spins)
   return M
 
 # Define Monte Carlo update algorithms
-@jit(nopython=True)
+@njit(fastmath=FASTMATH)
 def Metropolis(spins, T, J, h, E, M, Acceptance, sweepcount):
     # Metropolis single spin flip algorithm. We first pick a random site (x,y) and then calculate the change 
     # in energy if we were to flip it (up->down or down->up). We then draw a number to see if the move is accepted.
@@ -76,7 +78,7 @@ def Metropolis(spins, T, J, h, E, M, Acceptance, sweepcount):
 
     return spins, Acceptance, flipped_sites, E, M, sweepcount
 
-@jit(nopython=True)
+@njit(fastmath=FASTMATH)
 def Wolff(spins,T,J,L, h):
     attempted=[]
     x = np.random.randint(L)
@@ -102,7 +104,7 @@ def Wolff(spins,T,J,L, h):
     ClusterSize = len(cluster)
     return spins, cluster # here cluster = flipped_sites
 
-@jit(nopython=True)
+@njit(fastmath=FASTMATH)
 def SwendsenWang(spins, T, J, h):
     L = spins.shape[0]
     bonds = np.zeros((L, L, 4), dtype=np.uint8)  # 0: up, 1: down, 2: left, 3: right
@@ -157,7 +159,7 @@ def SwendsenWang(spins, T, J, h):
 
     return spins, flipped_sites[:flip_count]
 
-@jit(nopython=True)
+@njit(fastmath=FASTMATH)
 def Kawasaki(spins, T, J, h):
     flipped_sites = []
     L = spins.shape[0]
@@ -179,7 +181,7 @@ def Kawasaki(spins, T, J, h):
                 spins[x1,y1], spins[x2,y2] = spins[x2,y2], spins[x1,y1] # swap back if not accepted
     return spins, flipped_sites
 
-@jit(nopython=True)
+@njit(fastmath=FASTMATH)
 def Glauber(spins, T, J, h, E, M, Acceptance, sweepcount):
     # Glauber heat bath algorithm. We first pick a random site (x,y) and then calculate the change
     # in energy if we were to flip it (up->down or down->up). We then draw a number to see if the move is accepted.
@@ -323,6 +325,27 @@ def update_algorithm_choice(event):
     
     # reset_for_parameter_change()
 
+def open_advanced_options():
+    def apply_options():
+        global FASTMATH, PARALLEL
+        FASTMATH = fastmath_var.get()
+        PARALLEL = parallel_var.get()
+        adv_win.destroy()
+
+    adv_win = tk.Toplevel(root)
+    adv_win.title("Advanced Options")
+    adv_win.geometry("250x150")
+    fastmath_var = tk.BooleanVar(value=FASTMATH)
+    parallel_var = tk.BooleanVar(value=PARALLEL)
+
+    fastmath_check = ttk.Checkbutton(adv_win, text="Enable FASTMATH", variable=fastmath_var)
+    fastmath_check.pack(pady=10)
+    parallel_check = ttk.Checkbutton(adv_win, text="Enable PARALLEL", variable=parallel_var)
+    parallel_check.pack(pady=10)
+
+    apply_btn = ttk.Button(adv_win, text="Apply", command=apply_options)
+    apply_btn.pack(pady=10)
+
 def run_simulation():
     # This is our main simulation loop, called every few milliseconds by Tkinter's after method. 
     # It performs a sweep of the lattice, updates the image and the plot.
@@ -366,7 +389,7 @@ def run_simulation():
     root.after(5, run_simulation)
 
 # initialize spins randomly
-spins = np.random.choice([-1, 1], size=(L, L))
+spins = np.random.choice([-1, 1], size=(L, L)).astype(np.int32)
 E = Energy(spins,J,h)
 M = Mag(spins)
 
@@ -466,6 +489,9 @@ algorithm_dropdown.current(0)
 algorithm_dropdown.grid(row=8, column=0, columnspan=3, padx=5, pady=5)
 
 algorithm_dropdown.bind("<<ComboboxSelected>>", update_algorithm_choice)
+
+advanced_btn = ttk.Button(slider_frame, text="Advanced Options", command=open_advanced_options)
+advanced_btn.grid(row=9, column=0, columnspan=3, padx=5, pady=10)
 
 
 # run the window and simulation
