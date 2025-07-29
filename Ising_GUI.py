@@ -2,20 +2,23 @@ import tkinter as tk
 from tkinter import ttk
 import numpy as np
 import random
-
 from numba import njit, prange, float64, int32
-
 from PIL import Image, ImageTk
-
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from collections import deque
+import argparse
+
+# Set up command line argument parsing
+parser = argparse.ArgumentParser(description="Ising Model Simulation GUI")
+parser.add_argument("--cache", type=bool, default=False, help="Enable caching for faster simulations")
 
 scale = 8 # scaling factor for display
 simulation_update_delay = 5 # milliseconds between updates
 
 FASTMATH = True
 PARALLEL = True
+CACHE = parser.parse_args().cache
 
 plot_observable = "Magnetization" # "Magnetization", "Energy", "Acceptance"
 algorithm = "Metropolis" # "Metropolis", "Wolff", "Glauber", "Swendsen-Wang", "Kawasaki"
@@ -31,7 +34,7 @@ Acceptance = 0 # initialize acceptance counter
 sweepcount = 1 # initialize sweep counter
 
 # define functions to calculate energy and magnetization
-@njit(float64(int32[:,:], float64, float64), parallel=PARALLEL, fastmath=FASTMATH)
+@njit(float64(int32[:,:], float64, float64), parallel=PARALLEL, fastmath=FASTMATH, cache=CACHE)
 def Energy(spins,J, h):
   # Calculates the energy of a given lattice configuration. 
   TotalEnergy=0
@@ -41,14 +44,14 @@ def Energy(spins,J, h):
       TotalEnergy+= -J * (spins[i,j] * (spins[(i+1)%side,j] + spins[i,(j+1)%side])) - h * spins[i,j]
   return TotalEnergy
 
-@njit(float64(int32[:,:]), fastmath=FASTMATH)
+@njit(float64(int32[:,:]), fastmath=FASTMATH, cache=CACHE)
 def Mag(spins): 
   # Calculates the magnetization of a given lattice configuration.
   M = np.sum(spins)
   return M
 
 # Define Monte Carlo update algorithms
-@njit(fastmath=FASTMATH)
+@njit(fastmath=FASTMATH, cache=CACHE)
 def Metropolis(spins, T, J, h, E, M, Acceptance, sweepcount):
     # Metropolis single spin flip algorithm. We first pick a random site (x,y) and then calculate the change 
     # in energy if we were to flip it (up->down or down->up). We then draw a number to see if the move is accepted.
@@ -78,7 +81,7 @@ def Metropolis(spins, T, J, h, E, M, Acceptance, sweepcount):
 
     return spins, Acceptance, flipped_sites, E, M, sweepcount
 
-@njit(fastmath=FASTMATH)
+@njit(fastmath=FASTMATH, cache=CACHE)
 def Wolff(spins,T,J,L, h):
     attempted=[]
     x = np.random.randint(L)
@@ -104,7 +107,7 @@ def Wolff(spins,T,J,L, h):
     ClusterSize = len(cluster)
     return spins, cluster # here cluster = flipped_sites
 
-@njit(fastmath=FASTMATH)
+@njit(fastmath=FASTMATH, cache=CACHE)
 def SwendsenWang(spins, T, J, h):
     L = spins.shape[0]
     bonds = np.zeros((L, L, 4), dtype=np.uint8)  # 0: up, 1: down, 2: left, 3: right
@@ -159,7 +162,7 @@ def SwendsenWang(spins, T, J, h):
 
     return spins, flipped_sites[:flip_count]
 
-@njit(fastmath=FASTMATH)
+@njit(fastmath=FASTMATH, cache=CACHE)
 def Kawasaki(spins, T, J, h):
     flipped_sites = []
     L = spins.shape[0]
@@ -181,7 +184,7 @@ def Kawasaki(spins, T, J, h):
                 spins[x1,y1], spins[x2,y2] = spins[x2,y2], spins[x1,y1] # swap back if not accepted
     return spins, flipped_sites
 
-@njit(fastmath=FASTMATH)
+@njit(fastmath=FASTMATH, cache=CACHE)
 def Glauber(spins, T, J, h, E, M, Acceptance, sweepcount):
     # Glauber heat bath algorithm. We first pick a random site (x,y) and then calculate the change
     # in energy if we were to flip it (up->down or down->up). We then draw a number to see if the move is accepted.
@@ -492,6 +495,9 @@ algorithm_dropdown.bind("<<ComboboxSelected>>", update_algorithm_choice)
 
 advanced_btn = ttk.Button(slider_frame, text="Advanced Options", command=open_advanced_options)
 advanced_btn.grid(row=9, column=0, columnspan=3, padx=5, pady=10)
+
+# run all @njit functions once to compile them
+
 
 
 # run the window and simulation
