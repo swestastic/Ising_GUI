@@ -14,7 +14,7 @@ parser = argparse.ArgumentParser(description="Ising Model Simulation GUI")
 parser.add_argument("--cache", type=bool, default=False, help="Enable caching for faster simulations")
 
 scale = 8 # scaling factor for display
-simulation_update_delay = 5 # milliseconds between updates
+simulation_update_delay = 16 # milliseconds between updates, 16ms ~ 60 FPS 
 
 FASTMATH = True
 PARALLEL = True
@@ -33,6 +33,8 @@ count = 0 # counter for plot updates
 Acceptance = 0 # initialize acceptance counter
 sweepcount = 1 # initialize sweep counter
 
+
+############################# Observable Calculation Functions #############################
 # define functions to calculate energy and magnetization
 @njit(float64(int32[:,:], float64, float64), parallel=PARALLEL, fastmath=FASTMATH, cache=CACHE)
 def Energy(spins,J, h):
@@ -50,7 +52,7 @@ def Mag(spins):
   M = np.sum(spins)
   return M
 
-# Define Monte Carlo update algorithms
+############################# Monte Carlo Algorithms #############################
 @njit(fastmath=FASTMATH, cache=CACHE)
 def Metropolis(spins, T, J, h, E, M, Acceptance, sweepcount):
     # Metropolis single spin flip algorithm. We first pick a random site (x,y) and then calculate the change 
@@ -214,27 +216,23 @@ def Glauber(spins, T, J, h, E, M, Acceptance, sweepcount):
 
     return spins, Acceptance, flipped_sites, E, M, sweepcount
 
-def spins_to_image_init(spins):
-    L = spins.shape[0]
-    # Create an RGB image: white = +1, black = -1
+############################# Image Generation #############################
+
+def init_rgb_array(spins, L, scale):
+    # Create an RGB array for the image: white = +1, black = -1
     rgb_array = np.zeros((L, L, 3), dtype=np.uint8)
     rgb_array[spins == 1] = [255, 255, 255]  # white
     rgb_array[spins == -1] = [0, 0, 0]       # black
-    img = Image.fromarray(rgb_array, mode='RGB')
-    img = img.resize((L * scale, L * scale), resample=Image.NEAREST)
     return rgb_array
 
-def spins_to_image(spins, flipped_sites, rgb_array):
-    L = spins.shape[0]
-    # Create an RGB image: white = +1, black = -1
+def update_spins_image(spins, flipped_sites, rgb_array, scale):
     for x, y in flipped_sites:
-        if spins[x, y] == 1:
-            rgb_array[x, y] = [255, 255, 255]  # white
-        else:
-            rgb_array[x, y] = [0, 0, 0]        # black
-    img = Image.fromarray(rgb_array, mode='RGB')
-    img = img.resize((L * scale, L * scale), resample=Image.NEAREST)
-    return img
+        rgb_array[x, y] = [255, 255, 255] if spins[x, y] == 1 else [0, 0, 0]
+
+    # Scale using repeat
+    scaled_array = np.repeat(np.repeat(rgb_array, scale, axis=0), scale, axis=1)
+
+    return Image.fromarray(scaled_array, 'RGB')
 
 def reset_for_parameter_change():
     global Acceptance, sweepcount, E, M
@@ -349,6 +347,17 @@ def open_advanced_options():
     apply_btn = ttk.Button(adv_win, text="Apply", command=apply_options)
     apply_btn.pack(pady=10)
 
+def update_plot(E, M, L, data_buffer):
+    global root, line
+    if plot_observable == "Energy":
+        data_buffer.append(E / L**2)
+    elif plot_observable == "Magnetization":
+        data_buffer.append(M / L**2)
+    elif plot_observable == "Acceptance":
+        data_buffer.append(Acceptance / sweepcount)
+    line.set_ydata(list(data_buffer) + [0] * (100 - len(data_buffer)))
+    root.after_idle(canvas.draw)
+
 def run_simulation():
     # This is our main simulation loop, called every few milliseconds by Tkinter's after method. 
     # It performs a sweep of the lattice, updates the image and the plot.
@@ -373,21 +382,14 @@ def run_simulation():
         # M = Mag(spins) # magnetization does not change in Kawasaki
 
     # update the image
-    pil_img = spins_to_image(spins, flipped_sites, rgb_array)
+    pil_img = update_spins_image(spins, flipped_sites, rgb_array, scale)
     label_img = ImageTk.PhotoImage(pil_img)
     label.configure(image=label_img)
 
     # update the plot after 2 run_simulation calls (~10ms)
-    count = (count + 1) % 2
+    count = (count + 1) % 3
     if count == 0:
-        if plot_observable == "Energy":
-            data_buffer.append(E / L**2)
-        elif plot_observable == "Magnetization":
-            data_buffer.append(M / L**2)
-        elif plot_observable == "Acceptance":
-            data_buffer.append(Acceptance / sweepcount)
-        line.set_ydata(list(data_buffer) + [0] * (100 - len(data_buffer)))
-        canvas.draw()
+        update_plot(E, M, L, data_buffer)
 
     root.after(5, run_simulation)
 
@@ -397,7 +399,7 @@ E = Energy(spins,J,h)
 M = Mag(spins)
 
 # initialize the RGB image array
-rgb_array = spins_to_image_init(spins)
+rgb_array = init_rgb_array(spins, L, scale)
 
 ## Set up the GUI
 # Create the main window
@@ -495,10 +497,6 @@ algorithm_dropdown.bind("<<ComboboxSelected>>", update_algorithm_choice)
 
 advanced_btn = ttk.Button(slider_frame, text="Advanced Options", command=open_advanced_options)
 advanced_btn.grid(row=9, column=0, columnspan=3, padx=5, pady=10)
-
-# run all @njit functions once to compile them
-
-
 
 # run the window and simulation
 root.after(50, update_observable_labels)
