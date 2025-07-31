@@ -17,7 +17,7 @@ parser.add_argument("--cache", type=bool, default=False, help="Enable caching fo
 L = 64 # lattice size (LxL)
 T = 2.26918531421 # temperature
 J = 1.0 # coupling constant
-h = 0.0
+h = 0.0 # external magnetic field
 
 # initializations
 count = 0 # counter for plot updates
@@ -25,7 +25,6 @@ Acceptance = 0 # initialize acceptance counter
 sweepcount = 1 # initialize sweep counter
 
 scale = 512 // L # scaling factor for display
-simulation_update_delay = 16 # milliseconds between updates, 16ms ~ 60 FPS 
 
 # Numba settings
 FASTMATH = True
@@ -40,11 +39,12 @@ algorithm = "Metropolis" # "Metropolis", "Wolff", "Glauber", "Swendsen-Wang", "K
 @njit(float64(int32[:,:], float64, float64), parallel=PARALLEL, fastmath=FASTMATH, cache=CACHE)
 def Energy(spins,J, h):
   # Calculates the energy of a given lattice configuration. 
-  TotalEnergy=0
+  TotalEnergy = 0
   side = len(spins)
   for i in prange(side):
     for j in prange(side):
-      TotalEnergy+= -J * (spins[i,j] * (spins[(i+1)%side,j] + spins[i,(j+1)%side])) - h * spins[i,j]
+      TotalEnergy += (spins[i,j] * (spins[(i+1)%side,j] + spins[i,(j+1)%side])) - h * spins[i,j]
+  TotalEnergy *= -J
   return TotalEnergy
 
 @njit(float64(int32[:,:]), fastmath=FASTMATH, cache=CACHE)
@@ -186,7 +186,7 @@ def Kawasaki(spins, T, J, h, L):
 
 @njit(fastmath=FASTMATH, cache=CACHE)
 def Glauber(spins, T, J, h, E, M, L, Acceptance, sweepcount):
-    # Glauber heat bath algorithm. We first pick a random site (x,y) and then calculate the change
+    # Glauber algorithm. We first pick a random site (x,y) and then calculate the change
     # in energy if we were to flip it (up->down or down->up). We then draw a number to see if the move is accepted.
     # If it is, then we update the value in the lattice and update the energy, magnetization, and acceptances. 
     flipped_sites = []
@@ -213,9 +213,42 @@ def Glauber(spins, T, J, h, E, M, L, Acceptance, sweepcount):
 
     return spins, Acceptance, flipped_sites, E, M, sweepcount
 
+@njit(fastmath=FASTMATH, cache=CACHE)
+def HeatBath(spins, T, J, h, L):
+    flipped_sites = []
+
+    for i in range(L**2):
+        x = np.random.randint(L)
+        y = np.random.randint(L)
+
+        # Periodic boundary neighbors
+        neighbors = (
+            spins[(x+1)%L, y] + spins[(x-1)%L, y] +
+            spins[x, (y+1)%L] + spins[x, (y-1)%L]
+        )
+
+        # Energies for spin up/down including magnetic field
+        E_up = -J * neighbors - h
+        E_down = J * neighbors + h
+
+        p_up = np.exp(-E_up/T)
+        p_down = np.exp(-E_down/T)
+        prob_spin_up = p_up / (p_up + p_down)
+
+        # Update spin based on computed probability
+        backup = spins[x, y]
+        if np.random.rand() < prob_spin_up:
+            spins[x, y] = 1
+        else:
+            spins[x, y] = -1
+        if backup == spins[x, y]:
+            flipped_sites.append((x, y))  # Only record if the spin actually changed
+    return spins, flipped_sites
+
+
 ############################# Image Generation #############################
 
-def init_rgb_array(spins, L, scale):
+def init_rgb_array(spins, L):
     # Create an RGB array for the image: white = +1, black = -1
     rgb_array = np.zeros((L, L, 3), dtype=np.uint8)
     rgb_array[spins == 1] = [255, 255, 255]  # white
@@ -328,7 +361,7 @@ def update_size_choice(event):
     L = int(size_dropdown.get())
     scale = 512 // L
     spins = np.random.choice([-1, 1], size=(L, L)).astype(np.int32)
-    rgb_array = init_rgb_array(spins, L, scale)
+    rgb_array = init_rgb_array(spins, L)
     pil_img = update_spins_image(spins, [], rgb_array, scale)
     label_img = ImageTk.PhotoImage(pil_img)
     reset_for_parameter_change()
@@ -386,6 +419,10 @@ def run_simulation():
     elif algorithm == "Kawasaki":
         spins, flipped_sites = Kawasaki(spins, T, J, h, L)
         E = Energy(spins,J,h)
+    elif algorithm == "HeatBath":
+        spins, flipped_sites = HeatBath(spins, T, J, h, L)
+        E = Energy(spins,J,h)
+        M = Mag(spins)
 
     # update the image
     pil_img = update_spins_image(spins, flipped_sites, rgb_array, scale)
@@ -405,7 +442,7 @@ E = Energy(spins,J,h)
 M = Mag(spins)
 
 # initialize the RGB image array
-rgb_array = init_rgb_array(spins, L, scale)
+rgb_array = init_rgb_array(spins, L)
 
 ## Set up the GUI
 # Create the main window
@@ -504,7 +541,7 @@ magnetization_label.grid(row=7, column=0, columnspan=3, padx=5, pady=5)
 
 algorithm_label = ttk.Label(slider_frame, text="Algorithm:")
 algorithm_label.grid(row=8, column=0, padx=5, pady=5)
-algorithm_dropdown = ttk.Combobox(slider_frame, values=["Metropolis", "Wolff", "Glauber", "Swendsen-Wang", "Kawasaki"], state="readonly")
+algorithm_dropdown = ttk.Combobox(slider_frame, values=["Metropolis", "Wolff", "Glauber", "Swendsen-Wang", "Kawasaki", "HeatBath"], state="readonly")
 algorithm_dropdown.current(0)
 algorithm_dropdown.grid(row=8, column=0, columnspan=3, padx=5, pady=5)
 
@@ -519,6 +556,7 @@ if not CACHE:
     Glauber(spins, T, J, h, E, M, L, Acceptance, sweepcount)
     SwendsenWang(spins, T, J, h, L)
     Kawasaki(spins, T, J, h, L)
+    HeatBath(spins, T, J, h, L)
 
 # run the window and simulation
 root.after(50, update_observable_labels)

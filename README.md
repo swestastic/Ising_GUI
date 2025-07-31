@@ -21,7 +21,7 @@ This app allows for simulation using the Metropolis-Hastings, Wolff, Swendsen-Wa
 The Metropolis-Hastings algorithm is where "flips" are proposed to random sites on the lattice. A "flip" will invert the value on a given site $\sigma_i=\pm1\rightarrow\mp1$.
 A flip will either be accepted or rejected based on a Boltzmann probability, $r<e^{-\Delta E/T}$, where $r$ is a random number drawn on $(0,1)$. Decreases in energy are always accepted, and increases in energy have a chance to be accepted.
 
-The Glauber, or "Heat Bath", algorithm is very similar to the Mtropolis-Hastings one, with the exception that the probability acceptance criteria is different. This criteria is $r < \frac{1}{1+e^{\Delta E/T}}$
+The Glauber algorithm is very similar to the Mtropolis-Hastings one, with the exception that the probability acceptance criteria is different. This criteria is $r < \frac{1}{1+e^{\Delta E/T}}$
 
 The Wolff algorithm works by picking a random site and then attempting to build a cluster made up of neighboring sites with the same spin value $\sigma_i$. Additions to the cluster are based on a probability $r < 1-e^{-2J/T}$. This algorithm is rejection-free, so the cluster is flipped every time.
 
