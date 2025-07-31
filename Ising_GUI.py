@@ -13,25 +13,27 @@ import argparse
 parser = argparse.ArgumentParser(description="Ising Model Simulation GUI")
 parser.add_argument("--cache", type=bool, default=False, help="Enable caching for faster simulations")
 
-scale = 8 # scaling factor for display
+# parameters
+L = 64 # lattice size (LxL)
+T = 2.26918531421 # temperature
+J = 1.0 # coupling constant
+h = 0.0
+
+# initializations
+count = 0 # counter for plot updates
+Acceptance = 0 # initialize acceptance counter
+sweepcount = 1 # initialize sweep counter
+
+scale = 512 // L # scaling factor for display
 simulation_update_delay = 16 # milliseconds between updates, 16ms ~ 60 FPS 
 
+# Numba settings
 FASTMATH = True
 PARALLEL = True
 CACHE = parser.parse_args().cache
 
 plot_observable = "Magnetization" # "Magnetization", "Energy", "Acceptance"
 algorithm = "Metropolis" # "Metropolis", "Wolff", "Glauber", "Swendsen-Wang", "Kawasaki"
-
-# parameters
-L = 50 # lattice size (LxL)
-T = 2.26918531421 # temperature
-J = 1.0 # coupling constant
-h = 0.0
-
-count = 0 # counter for plot updates
-Acceptance = 0 # initialize acceptance counter
-sweepcount = 1 # initialize sweep counter
 
 ############################# Observable Calculation Functions #############################
 # define functions to calculate energy and magnetization
@@ -108,8 +110,7 @@ def Wolff(spins,T,J,L, h):
     return spins, cluster # here cluster = flipped_sites
 
 @njit(fastmath=FASTMATH, cache=CACHE)
-def SwendsenWang(spins, T, J, h):
-    L = spins.shape[0]
+def SwendsenWang(spins, T, J, h, L):
     bonds = np.zeros((L, L, 4), dtype=np.uint8)  # 0: up, 1: down, 2: left, 3: right
     p = 1 - np.exp(-2 * J / T)
 
@@ -163,9 +164,8 @@ def SwendsenWang(spins, T, J, h):
     return spins, flipped_sites[:flip_count]
 
 @njit(fastmath=FASTMATH, cache=CACHE)
-def Kawasaki(spins, T, J, h):
+def Kawasaki(spins, T, J, h, L):
     flipped_sites = []
-    L = spins.shape[0]
     for i in range(L**2):
         x1 = np.random.randint(0,L)
         y1 = np.random.randint(0,L)
@@ -323,6 +323,16 @@ def update_algorithm_choice(event):
     
     # reset_for_parameter_change()
 
+def update_size_choice(event):
+    global L, scale, spins, rgb_array, label_img, label, E, M
+    L = int(size_dropdown.get())
+    scale = 512 // L
+    spins = np.random.choice([-1, 1], size=(L, L)).astype(np.int32)
+    rgb_array = init_rgb_array(spins, L, scale)
+    pil_img = update_spins_image(spins, [], rgb_array, scale)
+    label_img = ImageTk.PhotoImage(pil_img)
+    reset_for_parameter_change()
+
 def open_advanced_options():
     def apply_options():
         global FASTMATH, PARALLEL
@@ -370,13 +380,12 @@ def run_simulation():
     elif algorithm == "Glauber":
         spins, Acceptance, flipped_sites, E, M, sweepcount = Glauber(spins, T, J, h, E, M, L, Acceptance, sweepcount)
     elif algorithm == "Swendsen-Wang":
-        spins, flipped_sites = SwendsenWang(spins, T, J, h)
+        spins, flipped_sites = SwendsenWang(spins, T, J, h, L)
         E = Energy(spins,J,h)
         M = Mag(spins)
     elif algorithm == "Kawasaki":
-        spins, flipped_sites = Kawasaki(spins, T, J, h)
+        spins, flipped_sites = Kawasaki(spins, T, J, h, L)
         E = Energy(spins,J,h)
-        # M = Mag(spins) # magnetization does not change in Kawasaki
 
     # update the image
     pil_img = update_spins_image(spins, flipped_sites, rgb_array, scale)
@@ -475,6 +484,15 @@ observable_dropdown.grid(row=4, column=0, columnspan=3, padx=5, pady=5)
 
 observable_dropdown.bind("<<ComboboxSelected>>", update_plot_choice)
 
+size_label = ttk.Label(slider_frame, text="Size (L):")
+size_label.grid(row=10, column=0, padx=5, pady=5)
+
+size_dropdown = ttk.Combobox(slider_frame, values=[4, 8, 16, 32, 64, 128, 256], state="readonly")
+size_dropdown.current(4)
+size_dropdown.grid(row=10, column=0, columnspan=3, padx=5, pady=5)
+
+size_dropdown.bind("<<ComboboxSelected>>", update_size_choice)
+
 acceptance_label = ttk.Label(slider_frame, text=f"Acceptance: {Acceptance/sweepcount:.3f}")
 acceptance_label.grid(row=5, column=0, columnspan=3, padx=5, pady=5)
 
@@ -499,8 +517,8 @@ advanced_btn.grid(row=9, column=0, columnspan=3, padx=5, pady=10)
 if not CACHE:
     Wolff(spins, T, J, L, h)
     Glauber(spins, T, J, h, E, M, L, Acceptance, sweepcount)
-    SwendsenWang(spins, T, J, h)
-    Kawasaki(spins, T, J, h)
+    SwendsenWang(spins, T, J, h, L)
+    Kawasaki(spins, T, J, h, L)
 
 # run the window and simulation
 root.after(50, update_observable_labels)
