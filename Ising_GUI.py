@@ -26,13 +26,12 @@ algorithm = "Metropolis" # "Metropolis", "Wolff", "Glauber", "Swendsen-Wang", "K
 # parameters
 L = 50 # lattice size (LxL)
 T = 2.26918531421 # temperature
-J = 1 # coupling constant
-h = 0
+J = 1.0 # coupling constant
+h = 0.0
 
 count = 0 # counter for plot updates
 Acceptance = 0 # initialize acceptance counter
 sweepcount = 1 # initialize sweep counter
-
 
 ############################# Observable Calculation Functions #############################
 # define functions to calculate energy and magnetization
@@ -54,12 +53,11 @@ def Mag(spins):
 
 ############################# Monte Carlo Algorithms #############################
 @njit(fastmath=FASTMATH, cache=CACHE)
-def Metropolis(spins, T, J, h, E, M, Acceptance, sweepcount):
+def Metropolis(spins, T, J, h, E, M, L, Acceptance, sweepcount):
     # Metropolis single spin flip algorithm. We first pick a random site (x,y) and then calculate the change 
     # in energy if we were to flip it (up->down or down->up). We then draw a number to see if the move is accepted.
     # If it is, then we update the value in the lattice and update the energy, magnetization, and acceptances. 
     flipped_sites = []
-    L = spins.shape[0]
     sweepcount += L**2
     for j in range(L**2):
         x=np.random.randint(L) #get a random position to update in the lattice
@@ -187,12 +185,11 @@ def Kawasaki(spins, T, J, h):
     return spins, flipped_sites
 
 @njit(fastmath=FASTMATH, cache=CACHE)
-def Glauber(spins, T, J, h, E, M, Acceptance, sweepcount):
+def Glauber(spins, T, J, h, E, M, L, Acceptance, sweepcount):
     # Glauber heat bath algorithm. We first pick a random site (x,y) and then calculate the change
     # in energy if we were to flip it (up->down or down->up). We then draw a number to see if the move is accepted.
     # If it is, then we update the value in the lattice and update the energy, magnetization, and acceptances. 
     flipped_sites = []
-    L = spins.shape[0]
     sweepcount += L**2
     for j in range(L**2):
         x=np.random.randint(L) #get a random position to update in the lattice
@@ -365,13 +362,13 @@ def run_simulation():
     global count, algorithm
 
     if algorithm == "Metropolis":
-        spins, Acceptance, flipped_sites, E, M, sweepcount = Metropolis(spins, T, J, h, E, M, Acceptance, sweepcount)
+        spins, Acceptance, flipped_sites, E, M, sweepcount = Metropolis(spins, T, J, h, E, M, L, Acceptance, sweepcount)
     elif algorithm == "Wolff":
         spins, flipped_sites = Wolff(spins, T, J, L, h)
         E = Energy(spins,J,h)
         M = Mag(spins)
     elif algorithm == "Glauber":
-        spins, Acceptance, flipped_sites, E, M, sweepcount = Glauber(spins, T, J, h, E, M, Acceptance, sweepcount)
+        spins, Acceptance, flipped_sites, E, M, sweepcount = Glauber(spins, T, J, h, E, M, L, Acceptance, sweepcount)
     elif algorithm == "Swendsen-Wang":
         spins, flipped_sites = SwendsenWang(spins, T, J, h)
         E = Energy(spins,J,h)
@@ -497,6 +494,13 @@ algorithm_dropdown.bind("<<ComboboxSelected>>", update_algorithm_choice)
 
 advanced_btn = ttk.Button(slider_frame, text="Advanced Options", command=open_advanced_options)
 advanced_btn.grid(row=9, column=0, columnspan=3, padx=5, pady=10)
+
+# precompile numba functions
+if not CACHE:
+    Wolff(spins, T, J, L, h)
+    Glauber(spins, T, J, h, E, M, L, Acceptance, sweepcount)
+    SwendsenWang(spins, T, J, h)
+    Kawasaki(spins, T, J, h)
 
 # run the window and simulation
 root.after(50, update_observable_labels)
