@@ -2,7 +2,7 @@ import tkinter as tk
 from tkinter import ttk
 import numpy as np
 import random
-from numba import njit, prange, float64, int32
+from numba import njit, prange, float64, int32, types
 from PIL import Image, ImageTk
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
@@ -54,7 +54,9 @@ def Mag(spins):
   return M
 
 ############################# Monte Carlo Algorithms #############################
-@njit(fastmath=FASTMATH, cache=CACHE)
+@njit(types.Tuple((int32[:, :],int32,int32[:, :],float64,float64,int32))(
+    int32[:, :], float64, float64, float64, float64, float64, int32, int32, int32),
+    fastmath=FASTMATH, cache=CACHE)
 def Metropolis(spins, T, J, h, E, M, L, Acceptance, sweepcount):
     # Metropolis single spin flip algorithm. We first pick a random site (x,y) and then calculate the change 
     # in energy if we were to flip it (up->down or down->up). We then draw a number to see if the move is accepted.
@@ -63,8 +65,7 @@ def Metropolis(spins, T, J, h, E, M, L, Acceptance, sweepcount):
     flip_count = 0
     sweepcount += L**2
     for j in range(L**2):
-        x=np.random.randint(L) #get a random position to update in the lattice
-        y=np.random.randint(L)
+        x,y = np.random.randint(0,L,2) #get a random position to update in the lattice
 
         dE = 2 * spins[x, y] * (
             J * (
@@ -88,8 +89,7 @@ def Metropolis(spins, T, J, h, E, M, L, Acceptance, sweepcount):
 @njit(fastmath=FASTMATH, cache=CACHE)
 def Wolff(spins,T,J,L, h):
     attempted=[]
-    x = np.random.randint(L)
-    y = np.random.randint(L) # Pick a random site to start the cluster
+    x,y = np.random.randint(0,L,2)
     cluster = [(x,y)]
     prob = 1-np.exp(-2*J/T)
 
@@ -165,21 +165,47 @@ def SwendsenWang(spins, T, J, h, L):
 
     return spins, flipped_sites[:flip_count]
 
-@njit(fastmath=FASTMATH, cache=CACHE)
+@njit(types.Tuple((types.Array(int32, 2, 'C'),types.Array(int32, 2, 'C')))
+    (types.Array(int32, 2, 'C'),float64, float64, float64,int32), fastmath=FASTMATH, cache=CACHE)
 def Kawasaki(spins, T, J, h, L):
-    flipped_sites = np.zeros((L**2, 2), dtype=np.int32)
+    flipped_sites = np.zeros((2*L**2, 2), dtype=np.int32)
     flip_count = 0
-    for i in range(2*L**2):
-        x1 = np.random.randint(0,L)
-        y1 = np.random.randint(0,L)
+    for i in range(L**2):
+        x1, y1 = np.random.randint(0,L,2)
         neighbors = [((x1+1)%L,y1),((x1-1)%L,y1),(x1,(y1+1)%L),(x1,(y1-1)%L)]
-        # check if a random neighbor has the opposite spin
         x2,y2 = neighbors[np.random.randint(0, 4)]
         if spins[x1,y1] != spins[x2,y2]:
-            E1 = Energy(spins,J,h)
-            spins[x1,y1], spins[x2,y2] = spins[x2,y2], spins[x1,y1] # swap the spins
-            E2 = Energy(spins,J,h)
-            dE = E2 - E1
+            # calculate energy before swap
+            E_before = -J * spins[x1, y1] * (
+                            spins[(x1 - 1) % L, y1] +
+                            spins[(x1 + 1) % L, y1] +
+                            spins[x1, (y1 - 1) % L] +
+                            spins[x1, (y1 + 1) % L]) - h * spins[x1, y1]
+
+            E_before += -J * spins[x2, y2] * (
+                            spins[(x2 - 1) % L, y2] +
+                            spins[(x2 + 1) % L, y2] +
+                            spins[x2, (y2 - 1) % L] +
+                            spins[x2, (y2 + 1) % L]) - h * spins[x2, y2]
+
+            # swap sites
+            spins[x1, y1], spins[x2, y2] = spins[x2, y2], spins[x1, y1]
+
+            # calculate energy after swap
+            E_after = -J * spins[x1, y1] * (
+                            spins[(x1 - 1) % L, y1] +
+                            spins[(x1 + 1) % L, y1] +
+                            spins[x1, (y1 - 1) % L] +
+                            spins[x1, (y1 + 1) % L]) - h * spins[x1, y1]
+
+            E_after += -J * spins[x2, y2] * (
+                            spins[(x2 - 1) % L, y2] +
+                            spins[(x2 + 1) % L, y2] +
+                            spins[x2, (y2 - 1) % L] +
+                            spins[x2, (y2 + 1) % L]) - h * spins[x2, y2]
+
+            dE = E_after - E_before
+
             if dE <= 0 or np.random.random() < np.exp(-dE/T):
                 flipped_sites[flip_count] = (x1,y1)
                 flipped_sites[flip_count + 1] = (x2,y2)
@@ -197,8 +223,7 @@ def Glauber(spins, T, J, h, E, M, L, Acceptance, sweepcount):
     flip_count = 0
     sweepcount += L**2
     for j in range(L**2):
-        x=np.random.randint(L) #get a random position to update in the lattice
-        y=np.random.randint(L)
+        x,y = np.random.randint(0,L,2) #get a random position to update in the lattice
 
         dE = 2 * spins[x, y] * (
             J * (
@@ -225,8 +250,7 @@ def HeatBath(spins, T, J, h, L):
     flip_count = 0
 
     for i in range(L**2):
-        x = np.random.randint(L)
-        y = np.random.randint(L)
+        x,y = np.random.randint(0,L,2)
 
         # Periodic boundary neighbors
         neighbors = (
@@ -558,7 +582,7 @@ algorithm_dropdown.bind("<<ComboboxSelected>>", update_algorithm_choice)
 advanced_btn = ttk.Button(slider_frame, text="Advanced Options", command=open_advanced_options)
 advanced_btn.grid(row=9, column=0, columnspan=3, padx=5, pady=10)
 
-# precompile numba functions
+# # precompile numba functions
 if not CACHE:
     Wolff(spins, T, J, L, h)
     Glauber(spins, T, J, h, E, M, L, Acceptance, sweepcount)
