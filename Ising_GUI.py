@@ -36,7 +36,8 @@ algorithm = "Metropolis" # "Metropolis", "Wolff", "Glauber", "Swendsen-Wang", "K
 
 ############################# Observable Calculation Functions #############################
 # define functions to calculate energy and magnetization
-@njit(float64(int32[:,:], float64, float64), parallel=PARALLEL, fastmath=FASTMATH, cache=CACHE)
+@njit(float64(int32[:,:], float64, float64), 
+    parallel=PARALLEL, fastmath=FASTMATH, cache=CACHE)
 def Energy(spins,J, h):
   # Calculates the energy of a given lattice configuration. 
   TotalEnergy = 0
@@ -54,8 +55,8 @@ def Mag(spins):
   return M
 
 ############################# Monte Carlo Algorithms #############################
-@njit(types.Tuple((int32[:, :],int32,int32[:, :],float64,float64,int32))(
-    int32[:, :], float64, float64, float64, float64, float64, int32, int32, int32),
+@njit(types.Tuple((int32[:, :],int32,int32[:, :],float64,float64,int32))
+    (int32[:, :], float64, float64, float64, float64, float64, int32, int32, int32),
     fastmath=FASTMATH, cache=CACHE)
 def Metropolis(spins, T, J, h, E, M, L, Acceptance, sweepcount):
     # Metropolis single spin flip algorithm. We first pick a random site (x,y) and then calculate the change 
@@ -166,7 +167,8 @@ def SwendsenWang(spins, T, J, h, L):
     return spins, flipped_sites[:flip_count]
 
 @njit(types.Tuple((types.Array(int32, 2, 'C'),types.Array(int32, 2, 'C')))
-    (types.Array(int32, 2, 'C'),float64, float64, float64,int32), fastmath=FASTMATH, cache=CACHE)
+    (types.Array(int32, 2, 'C'),float64, float64, float64,int32),
+    fastmath=FASTMATH, cache=CACHE)
 def Kawasaki(spins, T, J, h, L):
     flipped_sites = np.zeros((2*L**2, 2), dtype=np.int32)
     flip_count = 0
@@ -214,7 +216,9 @@ def Kawasaki(spins, T, J, h, L):
                 spins[x1,y1], spins[x2,y2] = spins[x2,y2], spins[x1,y1] # swap back if not accepted
     return spins, flipped_sites[:flip_count]
 
-@njit(fastmath=FASTMATH, cache=CACHE)
+@njit(types.Tuple((int32[:, :],int32,int32[:, :],float64,float64,int32))
+    (int32[:, :], float64, float64, float64, float64, float64, int32, int32, int32),
+    fastmath=FASTMATH, cache=CACHE)
 def Glauber(spins, T, J, h, E, M, L, Acceptance, sweepcount):
     # Glauber algorithm. We first pick a random site (x,y) and then calculate the change
     # in energy if we were to flip it (up->down or down->up). We then draw a number to see if the move is accepted.
@@ -244,7 +248,10 @@ def Glauber(spins, T, J, h, E, M, L, Acceptance, sweepcount):
 
     return spins, Acceptance, flipped_sites[:flip_count], E, M, sweepcount
 
-@njit(fastmath=FASTMATH, cache=CACHE)
+# @njit(fastmath=FASTMATH, cache=CACHE)
+@njit(types.Tuple((int32[:, :],int32[:, :]))
+    (int32[:, :],float64,float64,float64,int32),
+    fastmath=FASTMATH,cache=CACHE)
 def HeatBath(spins, T, J, h, L):
     flipped_sites = np.zeros((L**2, 2), dtype=np.int32)  # Preallocate for flipped sites
     flip_count = 0
@@ -583,12 +590,11 @@ advanced_btn = ttk.Button(slider_frame, text="Advanced Options", command=open_ad
 advanced_btn.grid(row=9, column=0, columnspan=3, padx=5, pady=10)
 
 # # precompile numba functions
+# This is only necessary for functions without numba signatures
+# Since it's already implemented for Kawasaki, Glauber, and HeatBath we don't need to call them here.
 if not CACHE:
     Wolff(spins, T, J, L, h)
-    Glauber(spins, T, J, h, E, M, L, Acceptance, sweepcount)
     SwendsenWang(spins, T, J, h, L)
-    Kawasaki(spins, T, J, h, L)
-    HeatBath(spins, T, J, h, L)
 
 # run the window and simulation
 root.after(50, update_observable_labels)
