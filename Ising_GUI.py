@@ -94,7 +94,12 @@ def Wolff(spins,T,J,L, h):
     attempted=[]
     x,y = np.random.randint(0,L,2)
     cluster = [(x,y)]
-    prob = 1-np.exp(-2*J/T)
+    prob = 1-np.exp(-2*abs(J)/T)
+    if J < 0:
+        for i in range(L):
+            for j in range(L):
+                if (i+j) % 2 == 0:  # flip sublattice A
+                    spins[i,j] *= -1
 
     for i,j in cluster: # add nearest neighbors to the cluster if they are within the range
         north = i,(j+1)%L
@@ -111,13 +116,25 @@ def Wolff(spins,T,J,L, h):
     
     for x,y in cluster:
         spins[x,y] *= -1
+
+    if J < 0:
+        for i in range(L):
+            for j in range(L):
+                if (i+j) % 2 == 0:  # flip sublattice A back
+                    spins[i,j] *= -1
     ClusterSize = len(cluster)
     return spins, cluster # here cluster = flipped_sites
 
 @njit(fastmath=FASTMATH, cache=CACHE)
 def SwendsenWang(spins, T, J, h, L):
     bonds = np.zeros((L, L, 4), dtype=np.uint8)  # 0: up, 1: down, 2: left, 3: right
-    p = 1 - np.exp(-2 * J / T)
+    p = 1 - np.exp(-2 * abs(J) / T)
+
+    if J < 0:
+        for i in range(L):
+            for j in range(L):
+                if (i+j) % 2 == 0:  # flip sublattice A
+                    spins[i,j] *= -1
 
     # Build bonds
     for i in range(L):
@@ -165,6 +182,12 @@ def SwendsenWang(spins, T, J, h, L):
                         flipped_sites[flip_count, 0] = x
                         flipped_sites[flip_count, 1] = y
                         flip_count += 1
+
+    if J < 0:
+        for i in range(L):
+            for j in range(L):
+                if (i+j) % 2 == 0:
+                    spins[i,j] *= -1
 
     return spins, flipped_sites[:flip_count]
 
