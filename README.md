@@ -35,8 +35,6 @@ Simply run `python3 Ising_GUI.py` to open a Tkinter window and run the simulatio
 
 ## Future Work
 
-- Add lattice scale and size adjustments
-
 - Add the ability to save data from simulation runs
 
 - Fix bug with Swendsen-Wang and Wolff for J<0 observables calculating incorrectly.

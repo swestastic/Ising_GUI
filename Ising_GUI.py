@@ -8,6 +8,7 @@ import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from collections import deque
 import argparse
+import time
 
 # Set up command line argument parsing
 parser = argparse.ArgumentParser(description="Ising Model Simulation GUI")
@@ -23,6 +24,7 @@ h = 0.0 # external magnetic field
 count = 0 # counter for plot updates
 Acceptance = 0 # initialize acceptance counter
 sweepcount = 1 # initialize sweep counter
+sweep_counter = 0 # counter for sweeps per second
 
 scale = 512 // L # scaling factor for display
 
@@ -304,11 +306,13 @@ def update_spins_image(spins, flipped_sites, rgb_array, scale):
     return Image.fromarray(scaled_array, 'RGB')
 
 def reset_for_parameter_change():
-    global Acceptance, sweepcount, E, M
+    global Acceptance, sweepcount, E, M, timer, sweep_counter
     Acceptance = 0
     sweepcount = 1
     E = Energy(spins,J,h)
     M = Mag(spins)
+    timer = time.time()
+    sweep_counter = 0
 
 def update_temp(val):
     global T
@@ -376,9 +380,11 @@ def update_plot_choice(event):
     canvas.draw()
 
 def update_observable_labels():
+    global sweep_counter
     energy_label.config(text=f"Energy / (L^2 J): {E / (L**2):.3f}")
     magnetization_label.config(text=f"Magnetization (M/L^2): {M / (L**2):.3f}")
     acceptance_label.config(text=f"Acceptance: {Acceptance/sweepcount:.3f}")
+    timer_label.config(text=f"Sweeps/second: {sweep_counter / (time.time() - timer):.3f}")
     root.after(50, update_observable_labels)
 
 def update_algorithm_choice(event):
@@ -441,7 +447,7 @@ def run_simulation():
     # This is our main simulation loop, called every few milliseconds by Tkinter's after method. 
     # It performs a sweep of the lattice, updates the image and the plot.
     global spins, T, J, Acceptance, label_img, label, E, M, L, plot_observable, sweepcount
-    global count, algorithm
+    global count, algorithm, sweep_counter
 
     if algorithm == "Metropolis":
         spins, Acceptance, flipped_sites, E, M, sweepcount = Metropolis(spins, T, J, h, E, M, L, Acceptance, sweepcount)
@@ -462,6 +468,7 @@ def run_simulation():
         spins, flipped_sites = HeatBath(spins, T, J, h, L)
         E = Energy(spins,J,h)
         M = Mag(spins)
+    sweep_counter += 1
 
     # update the image
     pil_img = update_spins_image(spins, flipped_sites, rgb_array, scale)
@@ -482,6 +489,9 @@ M = Mag(spins)
 
 # initialize the RGB image array
 rgb_array = init_rgb_array(spins, L)
+
+# initialize the timer
+timer = time.time()
 
 ## Set up the GUI
 # Create the main window
@@ -576,6 +586,8 @@ energy_label = ttk.Label(slider_frame, text=f"Energy / (L^2 J): {E / (L**2):.3f}
 energy_label.grid(row=6, column=0, columnspan=3, padx=5, pady=5)
 magnetization_label = ttk.Label(slider_frame, text=f"Magnetization (M/L^2): {M / (L**2):.3f}")
 magnetization_label.grid(row=7, column=0, columnspan=3, padx=5, pady=5)
+timer_label = ttk.Label(slider_frame, text=f"Sweeps/second: {sweep_counter / (time.time() - timer):.3f}")
+timer_label.grid(row=11, column=0, columnspan=3, padx=5, pady=5)
 
 
 algorithm_label = ttk.Label(slider_frame, text="Algorithm:")
@@ -595,6 +607,7 @@ advanced_btn.grid(row=9, column=0, columnspan=3, padx=5, pady=10)
 if not CACHE:
     Wolff(spins, T, J, L, h)
     SwendsenWang(spins, T, J, h, L)
+
 
 # run the window and simulation
 root.after(50, update_observable_labels)
