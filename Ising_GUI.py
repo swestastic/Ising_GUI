@@ -59,7 +59,8 @@ def Metropolis(spins, T, J, h, E, M, L, Acceptance, sweepcount):
     # Metropolis single spin flip algorithm. We first pick a random site (x,y) and then calculate the change 
     # in energy if we were to flip it (up->down or down->up). We then draw a number to see if the move is accepted.
     # If it is, then we update the value in the lattice and update the energy, magnetization, and acceptances. 
-    flipped_sites = []
+    flipped_sites = np.zeros((L**2, 2), dtype=np.int32)  # Preallocate for flipped sites
+    flip_count = 0
     sweepcount += L**2
     for j in range(L**2):
         x=np.random.randint(L) #get a random position to update in the lattice
@@ -77,11 +78,12 @@ def Metropolis(spins, T, J, h, E, M, L, Acceptance, sweepcount):
         if np.random.random() < np.exp(-dE/T):# Incrementing the energy and magnetization if the move is accepted
             spins[x,y]*=-1 # update the value in the lattice
             Acceptance += 1 # increment acceptance counter
-            flipped_sites.append((x,y))
+            flipped_sites[flip_count] = (x,y)
             E += dE
             M += 2*spins[x,y]
+            flip_count += 1
 
-    return spins, Acceptance, flipped_sites, E, M, sweepcount
+    return spins, Acceptance, flipped_sites[:flip_count], E, M, sweepcount
 
 @njit(fastmath=FASTMATH, cache=CACHE)
 def Wolff(spins,T,J,L, h):
@@ -127,14 +129,14 @@ def SwendsenWang(spins, T, J, h, L):
                 bonds[i, j, 3] = 1  # bond to right
 
     visited = np.zeros((L, L), dtype=np.uint8)
-    flipped_sites = np.full((L * L, 2), -1, dtype=np.int32)
+    flipped_sites = np.zeros((L**2, 2), dtype=np.int32)
     flip_count = 0
 
     for i in range(L):
         for j in range(L):
             if visited[i, j] == 0:
                 # Begin new cluster
-                cluster = np.full((L*L, 2), -1, dtype=np.int32)
+                cluster = np.zeros((L**2, 2), dtype=np.int32)
                 cluster[0, 0], cluster[0, 1] = i, j
                 visited[i, j] = 1
                 cluster_size = 1
@@ -165,8 +167,9 @@ def SwendsenWang(spins, T, J, h, L):
 
 @njit(fastmath=FASTMATH, cache=CACHE)
 def Kawasaki(spins, T, J, h, L):
-    flipped_sites = []
-    for i in range(L**2):
+    flipped_sites = np.zeros((L**2, 2), dtype=np.int32)
+    flip_count = 0
+    for i in range(2*L**2):
         x1 = np.random.randint(0,L)
         y1 = np.random.randint(0,L)
         neighbors = [((x1+1)%L,y1),((x1-1)%L,y1),(x1,(y1+1)%L),(x1,(y1-1)%L)]
@@ -178,18 +181,20 @@ def Kawasaki(spins, T, J, h, L):
             E2 = Energy(spins,J,h)
             dE = E2 - E1
             if dE <= 0 or np.random.random() < np.exp(-dE/T):
-                flipped_sites.append((x1,y1))
-                flipped_sites.append((x2,y2))
+                flipped_sites[flip_count] = (x1,y1)
+                flipped_sites[flip_count + 1] = (x2,y2)
+                flip_count += 2
             else:
                 spins[x1,y1], spins[x2,y2] = spins[x2,y2], spins[x1,y1] # swap back if not accepted
-    return spins, flipped_sites
+    return spins, flipped_sites[:flip_count]
 
 @njit(fastmath=FASTMATH, cache=CACHE)
 def Glauber(spins, T, J, h, E, M, L, Acceptance, sweepcount):
     # Glauber algorithm. We first pick a random site (x,y) and then calculate the change
     # in energy if we were to flip it (up->down or down->up). We then draw a number to see if the move is accepted.
     # If it is, then we update the value in the lattice and update the energy, magnetization, and acceptances. 
-    flipped_sites = []
+    flipped_sites = np.zeros((L**2, 2), dtype=np.int32)
+    flip_count = 0
     sweepcount += L**2
     for j in range(L**2):
         x=np.random.randint(L) #get a random position to update in the lattice
@@ -207,15 +212,17 @@ def Glauber(spins, T, J, h, E, M, L, Acceptance, sweepcount):
         if np.random.random() < 1/(1+np.exp(dE/T)):# Incrementing the energy and magnetization if the move is accepted
             spins[x,y]*=-1 # update the value in the lattice
             Acceptance += 1 # increment acceptance counter
-            flipped_sites.append((x,y))
+            flipped_sites[flip_count] = (x,y)
+            flip_count += 1
             E += dE
             M += 2*spins[x,y]
 
-    return spins, Acceptance, flipped_sites, E, M, sweepcount
+    return spins, Acceptance, flipped_sites[:flip_count], E, M, sweepcount
 
 @njit(fastmath=FASTMATH, cache=CACHE)
 def HeatBath(spins, T, J, h, L):
-    flipped_sites = []
+    flipped_sites = np.zeros((L**2, 2), dtype=np.int32)  # Preallocate for flipped sites
+    flip_count = 0
 
     for i in range(L**2):
         x = np.random.randint(L)
@@ -241,9 +248,10 @@ def HeatBath(spins, T, J, h, L):
             spins[x, y] = 1
         else:
             spins[x, y] = -1
-        if backup == spins[x, y]:
-            flipped_sites.append((x, y))  # Only record if the spin actually changed
-    return spins, flipped_sites
+        if backup != spins[x, y]:
+            flipped_sites[flip_count] = (x,y)  # No change in spin
+            flip_count += 1
+    return spins, flipped_sites[:flip_count]
 
 
 ############################# Image Generation #############################
