@@ -404,10 +404,10 @@ def update_plot_choice(event):
 
 def update_observable_labels():
     global sweep_counter
-    energy_label.config(text=f"Energy / (L^2 J): {E / (L**2):.3f}")
-    magnetization_label.config(text=f"Magnetization (M/L^2): {M / (L**2):.3f}")
-    acceptance_label.config(text=f"Acceptance: {Acceptance/sweepcount:.3f}")
-    timer_label.config(text=f"Sweeps/second: {sweep_counter / (time.time() - timer):.3f}")
+    energy_label.config(text=f"Energy: {E / (L**2):>9.3f}")
+    magnetization_label.config(text=f"Magnetization: {M / (L**2):>9.3f}")
+    acceptance_label.config(text=f"Acceptance: {Acceptance/sweepcount:>9.3f}")
+    timer_label.config(text=f"Sweeps/second: {sweep_counter / (time.time() - timer - 0.1):>9.3f}")
     root.after(50, update_observable_labels)
 
 def update_algorithm_choice(event):
@@ -534,7 +534,7 @@ slider_frame = ttk.Frame(root)
 slider_frame.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True)
 
 plot_frame = ttk.Frame(slider_frame)
-plot_frame.grid(row=3, column=0, columnspan=3, padx=5, pady=5)
+plot_frame.grid(row=0, column=0, columnspan=3, padx=5, pady=5)
 
 # Create the matplotlib figure and axis for plotting
 plt.style.use('fast')
@@ -554,75 +554,74 @@ fig.tight_layout()
 
 # Create the sliders and add them to the slider frame
 temp_label = ttk.Label(slider_frame, text="Temperature (T):")
-temp_label.grid(row=0, column=0, padx=5, pady=5)
-temp_slider = ttk.Scale(slider_frame, from_=0.1, to=5.0, orient=tk.HORIZONTAL, value=T)
-temp_slider.grid(row=0, column=1, padx=5, pady=5)
+temp_label.grid(row=1, column=0, padx=5, pady=5)
+temp_slider = ttk.Scale(slider_frame, from_=0.1, to=5.0, orient=tk.HORIZONTAL, value=T, length=250)
+temp_slider.grid(row=1, column=1, padx=5, pady=5)
 temp_slider.config(command=update_temp)
 temp_entry = ttk.Entry(slider_frame, width=5)
 temp_entry.insert(0, str(T))  # set initial value
 temp_entry.bind("<Return>", lambda event: update_temp_entry(temp_entry.get()))
-temp_entry.grid(row=0, column=2, padx=5, pady=5)
+temp_entry.grid(row=1, column=2, padx=5, pady=5)
 
 
 coupling_label = ttk.Label(slider_frame, text="Coupling (J):")
-coupling_label.grid(row=1, column=0, padx=5, pady=5)
-coupling_slider = ttk.Scale(slider_frame, from_=-2.0, to=2.0, orient=tk.HORIZONTAL, value=J)
-coupling_slider.grid(row=1, column=1, padx=5, pady=5)
+coupling_label.grid(row=2, column=0, padx=5, pady=5)
+coupling_slider = ttk.Scale(slider_frame, from_=-2.0, to=2.0, orient=tk.HORIZONTAL, value=J, length=250)
+coupling_slider.grid(row=2, column=1, padx=5, pady=5)
 coupling_slider.config(command=update_coupling)
 coupling_entry = ttk.Entry(slider_frame, width=5)
 coupling_entry.insert(0, str(J))  # set initial value
 coupling_entry.bind("<Return>", lambda event: update_coupling_entry(coupling_entry.get()))
-coupling_entry.grid(row=1, column=2, padx=5, pady=5)
+coupling_entry.grid(row=2, column=2, padx=5, pady=5)
 
 magneticfield_label = ttk.Label(slider_frame, text="Magnetic Field (h):")
-magneticfield_label.grid(row=2, column=0, padx=5, pady=5)
-magneticfield_slider = ttk.Scale(slider_frame, from_=-2.0, to=2.0, orient=tk.HORIZONTAL, value=h)
-magneticfield_slider.grid(row=2, column=1, padx=5, pady=5)
+magneticfield_label.grid(row=3, column=0, padx=5, pady=5)
+magneticfield_slider = ttk.Scale(slider_frame, from_=-2.0, to=2.0, orient=tk.HORIZONTAL, value=h, length=250)
+magneticfield_slider.grid(row=3, column=1, padx=5, pady=5)
 magneticfield_slider.config(command=update_magneticfield)
 magneticfield_entry = ttk.Entry(slider_frame, width=5)
 magneticfield_entry.insert(0, str(h))  # set initial value
 magneticfield_entry.bind("<Return>", lambda event: update_magneticfield_entry(magneticfield_entry.get()))
-magneticfield_entry.grid(row=2, column=2, padx=5, pady=5)
+magneticfield_entry.grid(row=3, column=2, padx=5, pady=5)
 
 observable_label = ttk.Label(slider_frame, text="Observable to Plot:")
 observable_label.grid(row=4, column=0, padx=5, pady=5)
-
 observable_dropdown = ttk.Combobox(slider_frame, values=["Magnetization", "Energy", "Acceptance"], state="readonly")
 observable_dropdown.current(0)
-observable_dropdown.grid(row=4, column=0, columnspan=3, padx=5, pady=5)
-
+observable_dropdown.grid(row=4, column=1, padx=5, pady=5)
 observable_dropdown.bind("<<ComboboxSelected>>", update_plot_choice)
 
 size_label = ttk.Label(slider_frame, text="Size (L):")
-size_label.grid(row=10, column=0, padx=5, pady=5)
-
+size_label.grid(row=6, column=0, padx=5, pady=5)
 size_dropdown = ttk.Combobox(slider_frame, values=[4, 8, 16, 32, 64, 128, 256], state="readonly")
 size_dropdown.current(4)
-size_dropdown.grid(row=10, column=0, columnspan=3, padx=5, pady=5)
-
+size_dropdown.grid(row=6, column=1, padx=5, pady=5)
 size_dropdown.bind("<<ComboboxSelected>>", update_size_choice)
 
-acceptance_label = ttk.Label(slider_frame, text=f"Acceptance: {Acceptance/sweepcount:.3f}")
-acceptance_label.grid(row=5, column=0, columnspan=3, padx=5, pady=5)
-
-energy_label = ttk.Label(slider_frame, text=f"Energy / (L^2 J): {E / (L**2):.3f}")
-energy_label.grid(row=6, column=0, columnspan=3, padx=5, pady=5)
-magnetization_label = ttk.Label(slider_frame, text=f"Magnetization (M/L^2): {M / (L**2):.3f}")
-magnetization_label.grid(row=7, column=0, columnspan=3, padx=5, pady=5)
-timer_label = ttk.Label(slider_frame, text=f"Sweeps/second: {sweep_counter / (time.time() - timer):.3f}")
-timer_label.grid(row=11, column=0, columnspan=3, padx=5, pady=5)
-
+# Live update labels for observables/stats
+acceptance_label = ttk.Label(slider_frame, text=f"Acceptance: {Acceptance/sweepcount:>7.3f}")
+acceptance_label.grid(row=4, column=2, padx=5, pady=5)
+acceptance_label.config(width=25)
+energy_label = ttk.Label(slider_frame, text=f"Energy: {E / (L**2):>7.3f}")
+energy_label.grid(row=5, column=2, padx=5, pady=5)
+energy_label.config(width=25)
+magnetization_label = ttk.Label(slider_frame, text=f"Magnetization: {M / (L**2):>7.3f}")
+magnetization_label.grid(row=6, column=2, padx=5, pady=5)
+magnetization_label.config(width=25)
+timer_label = ttk.Label(slider_frame, text=f"Sweeps/second: {sweep_counter / (time.time() - timer - 0.1):>7.3f}")
+timer_label.grid(row=7, column=2, padx=5, pady=5)
+timer_label.config(width=25)
 
 algorithm_label = ttk.Label(slider_frame, text="Algorithm:")
-algorithm_label.grid(row=8, column=0, padx=5, pady=5)
+algorithm_label.grid(row=5, column=0, padx=5, pady=5)
 algorithm_dropdown = ttk.Combobox(slider_frame, values=["Metropolis", "Wolff", "Glauber", "Swendsen-Wang", "Kawasaki", "HeatBath"], state="readonly")
 algorithm_dropdown.current(0)
-algorithm_dropdown.grid(row=8, column=0, columnspan=3, padx=5, pady=5)
+algorithm_dropdown.grid(row=5, column=1, padx=5, pady=5)
 
 algorithm_dropdown.bind("<<ComboboxSelected>>", update_algorithm_choice)
 
 advanced_btn = ttk.Button(slider_frame, text="Advanced Options", command=open_advanced_options)
-advanced_btn.grid(row=9, column=0, columnspan=3, padx=5, pady=10)
+advanced_btn.grid(row=7, column=0, padx=5, pady=5)
 
 # # precompile numba functions
 # This is only necessary for functions without numba signatures
@@ -631,7 +630,8 @@ if not CACHE:
     Wolff(spins, T, J, L, h)
     SwendsenWang(spins, T, J, h, L)
 
-
+# Get a fresh timer so the initial sweeps/sec calculation isn't skewed
+timer = time.time()
 # run the window and simulation
 root.after(50, update_observable_labels)
 root.after(5, run_simulation)
