@@ -25,6 +25,12 @@ count = 0 # counter for plot updates
 Acceptance = 0 # initialize acceptance counter
 sweepcount = 1 # initialize sweep counter
 sweep_counter = 0 # counter for sweeps per second
+# warmup_sweeps = 1000 # number of sweeps for warmup
+# measurement_sweeps = 1000 # number of sweeps for measurement
+# N_bins = 5
+# Nperbin = measurement_sweeps // N_bins # number of measurements per bin
+# E_bins = np.empty(N_bins, dtype=np.float64) # energy bins
+# M_bins = np.empty(N_bins, dtype=np.float64) # magnetization bins 
 
 scale = 512 // L # scaling factor for display
 
@@ -32,6 +38,8 @@ scale = 512 // L # scaling factor for display
 FASTMATH = True
 PARALLEL = True
 CACHE = parser.parse_args().cache
+
+RUN_SIM = False
 
 plot_observable = "Magnetization" # "Magnetization", "Energy", "Acceptance"
 algorithm = "Metropolis" # "Metropolis", "Wolff", "Glauber", "Swendsen-Wang", "Kawasaki"
@@ -309,6 +317,31 @@ def HeatBath(spins, T, J, h, L):
             flip_count += 1
     return spins, flipped_sites[:flip_count]
 
+########################### Binning Function #################
+
+def bins(data,Nperbin,Nbins):
+    # Each bin is a point in the array, values are continuously added to it
+    # Ex. 'Ebins' would be a 1xNbins array containing values of E (each value is a sum of Nperbin values)
+    # This function takes the average of each bin
+    
+    # Nbins = len(data), but we can also supply it as an argument
+
+    if Nbins != len(data):
+        print('Check array size')
+        return
+
+    Bin_avgs = data / Nperbin
+
+    Bin_totalavg=np.mean(Bin_avgs) #calculates one total value
+
+    #This is where we calculate the error bars
+    ErrorBars=0
+    for i in range(Nbins):
+        ErrorBars+=(Bin_avgs[i]-Bin_totalavg)**2
+    ErrorBars=np.sqrt(1/Nbins)*np.sqrt(1/(Nbins-1))*np.sqrt(ErrorBars)
+
+    return Bin_totalavg,ErrorBars
+    
 
 ############################# Image Generation #############################
 
@@ -434,6 +467,15 @@ def update_size_choice(event):
     label_img = ImageTk.PhotoImage(pil_img)
     reset_for_parameter_change()
 
+def update_size(L):
+    global scale, spins, rgb_array, label_img, label, E, M
+    scale = 512 // L
+    spins = np.random.choice([-1, 1], size=(L, L)).astype(np.int32)
+    rgb_array = init_rgb_array(spins, L)
+    pil_img = update_spins_image(spins, [], rgb_array, scale)
+    label_img = ImageTk.PhotoImage(pil_img)
+    reset_for_parameter_change()
+
 def open_advanced_options():
     def apply_options():
         global FASTMATH, PARALLEL
@@ -455,6 +497,132 @@ def open_advanced_options():
     apply_btn = ttk.Button(adv_win, text="Apply", command=apply_options)
     apply_btn.pack(pady=10)
 
+def generate_data():
+    def run_data_generation():
+        global T, Ti, Tf, Ts, L, J, h, algorithm, spins, E, M, Acceptance, sweepcount, scale, T_values, T_counter, RUN_SIM
+        global warmup_sweeps, measurement_sweeps, pil_img, E_bins, M_bins, N_bins, Nperbin
+        try:
+            Ti = float(Ti_entry.get())
+            Tf = float(Tf_entry.get())
+            Ts = float(Ts_entry.get())
+            L = int(L_entry.get())
+            J = float(coupling_entry.get())
+            h = float(magneticfield_entry.get())
+            warmup_sweeps = int(warmup_entry.get())
+            measurement_sweeps = int(measurement_entry.get())
+            N_bins = int(bin_entry.get())
+            Nperbin = measurement_sweeps // N_bins
+            algorithm = algorithm_dropdown.get()
+
+            E_bins = np.empty(N_bins, dtype=np.float64) # energy bins
+            M_bins = np.empty(N_bins, dtype=np.float64) # magnetization bins 
+
+
+        except ValueError:
+            print("Invalid input values.")
+            return
+        
+        # Validate inputs
+        if L%2 != 0:
+            print("Lattice size (L) must be even.")
+            return
+        if h != 0 and algorithm in ["Wolff", "Swendsen-Wang", "Kawasaki"]:
+            print("External magnetic field (h) is not supported for Wolff, Swendsen-Wang, Kawasaki algorithms.")
+            return
+        if Tf <= 0 or Ti <= 0 or Ts <= 0:
+            print("Final Temperature (Tf), Initial Temperature (Ti), and Temperature Step (Ts) must be greater than 0.")
+            return
+        if Ti < Tf:
+            print("Initial Temperature (Ti) must be greater than or equal to Final Temperature (Tf).")
+            return
+        
+        update_magneticfield_entry(h)
+        update_magneticfield(h)
+        update_coupling_entry(J)
+        update_coupling(J)
+        update_size(L)
+        
+        T_counter = 0
+        T_values = np.arange(Ti, Tf - Ts, -Ts).round(3)
+        T = T_values[T_counter]
+        update_temp_entry(T)
+        update_temp(T)
+
+        E = Energy(spins, J, h)
+        M = Mag(spins)
+        Acceptance = 0
+        sweepcount = 1
+
+        RUN_SIM = True
+        print(f"Running simulation from Ti={Ti} to Tf={Tf} with step Ts={Ts}, L={L}, J={J}, h={h}, algorithm={algorithm}")
+
+    sim_win = tk.Toplevel(root)
+    sim_win.title("Run a Simulation")
+    sim_win.geometry("400x400")
+
+    Ti_label = ttk.Label(sim_win, text="Initial Temperature (Ti):")
+    Ti_label.grid(row=0, column=0, padx=5, pady=5)
+    Ti_entry = ttk.Entry(sim_win, width=10)
+    Ti_entry.insert(0, str(5.0))
+    Ti_entry.grid(row=0, column=1, padx=5, pady=5)
+
+    Tf_label = ttk.Label(sim_win, text="Final Temperature (Tf):")
+    Tf_label.grid(row=1, column=0, padx=5, pady=5)
+    Tf_entry = ttk.Entry(sim_win, width=10)
+    Tf_entry.insert(0, str(1.0))
+    Tf_entry.grid(row=1, column=1, padx=5, pady=5)
+
+    Ts_label = ttk.Label(sim_win, text="Temperature Step (Ts):")
+    Ts_label.grid(row=2, column=0, padx=5, pady=5)
+    Ts_entry = ttk.Entry(sim_win, width=10)
+    Ts_entry.insert(0, str(0.1))
+    Ts_entry.grid(row=2, column=1, padx=5, pady=5)
+
+    L_label = ttk.Label(sim_win, text="Lattice Size (L):")
+    L_label.grid(row=3, column=0, padx=5, pady=5)
+    L_entry = ttk.Entry(sim_win, width=10)
+    L_entry.insert(0, str(10))
+    L_entry.grid(row=3, column=1, padx=5, pady=5)
+
+    algorithm_label = ttk.Label(sim_win, text="Algorithm:")
+    algorithm_label.grid(row=4, column=0, padx=5, pady=5)
+    algorithm_dropdown = ttk.Combobox(sim_win, values=["Metropolis", "Wolff", "Glauber", "Swendsen-Wang", "Kawasaki", "HeatBath"])
+    algorithm_dropdown.current(0)
+    algorithm_dropdown.grid(row=4, column=1, padx=5, pady=5)
+
+    coupling_label = ttk.Label(sim_win, text="Coupling Constant (J):")
+    coupling_label.grid(row=5, column=0, padx=5, pady=5)
+    coupling_entry = ttk.Entry(sim_win, width=10)
+    coupling_entry.insert(0, str(1.0))
+    coupling_entry.grid(row=5, column=1, padx=5, pady=5)
+
+    magneticfield_label = ttk.Label(sim_win, text="Magnetic Field (h):")
+    magneticfield_label.grid(row=6, column=0, padx=5, pady=5)
+    magneticfield_entry = ttk.Entry(sim_win, width=10)
+    magneticfield_entry.insert(0, str(0.0))
+    magneticfield_entry.grid(row=6, column=1, padx=5, pady=5)
+
+    warmup_label = ttk.Label(sim_win, text="Warmup Sweeps:")
+    warmup_label.grid(row=7, column=0, padx=5, pady=5)
+    warmup_entry = ttk.Entry(sim_win, width=10)
+    warmup_entry.insert(0, str(1000))
+    warmup_entry.grid(row=7, column=1, padx=5, pady=5)
+
+    measurement_label = ttk.Label(sim_win, text="Measurement Sweeps:")
+    measurement_label.grid(row=8, column=0, padx=5, pady=5)
+    measurement_entry = ttk.Entry(sim_win, width=10)
+    measurement_entry.insert(0, str(1000))
+    measurement_entry.grid(row=8, column=1, padx=5, pady=5)
+
+    bin_label = ttk.Label(sim_win, text="Number of Bins:")
+    bin_label.grid(row=9, column=0, padx=5, pady=5)
+    bin_entry = ttk.Entry(sim_win, width=10)
+    bin_entry.insert(0, str(20))
+    bin_entry.grid(row=9, column=1, padx=5, pady=5)
+
+    start_btn = ttk.Button(sim_win, text="Start", command=run_data_generation)
+    start_btn.grid(row=10, column=0, padx=5, pady=5)
+
 def update_plot(E, M, L, data_buffer):
     global root, line
     if plot_observable == "Energy":
@@ -470,7 +638,8 @@ def run_simulation():
     # This is our main simulation loop, called every few milliseconds by Tkinter's after method. 
     # It performs a sweep of the lattice, updates the image and the plot.
     global spins, T, J, Acceptance, label_img, label, E, M, L, plot_observable, sweepcount
-    global count, algorithm, sweep_counter
+    global count, algorithm, sweep_counter, warmup_sweeps, measurement_sweeps
+    global E_bins, M_bins, RUN_SIM, T_counter
 
     if algorithm == "Metropolis":
         spins, Acceptance, flipped_sites, E, M, sweepcount = Metropolis(spins, T, J, h, E, M, L, Acceptance, sweepcount)
@@ -491,6 +660,33 @@ def run_simulation():
         spins, flipped_sites = HeatBath(spins, T, J, h, L)
         E = Energy(spins,J,h)
         M = Mag(spins)
+    if RUN_SIM:
+        if warmup_sweeps <= sweep_counter < warmup_sweeps + measurement_sweeps:
+            E_bins[sweep_counter % N_bins] += E
+            M_bins[sweep_counter % N_bins] += M
+        elif sweep_counter >= warmup_sweeps + measurement_sweeps:
+            E_val, E_err = bins(E_bins, Nperbin, N_bins)
+            M_val, M_err = bins(M_bins, Nperbin, N_bins)
+            print(f"T: {T}, E: {E_val / L**2}, Error: {E_err / L**2}, M: {M_val / L**2}, Error: {M_err / L**2}")
+            sweep_counter = 0
+            T_counter += 1
+            if T_counter >= len(T_values):
+                RUN_SIM = False
+                T_counter = 0
+                print("Simulation complete.")
+            else:
+                T = T_values[T_counter]
+                update_temp_entry(T)
+                update_temp(T)
+                reset_for_parameter_change()
+
+                E = Energy(spins, J, h)
+                M = Mag(spins)
+                Acceptance = 0
+                sweepcount = 1
+
+                E_bins[:] = 0
+                M_bins[:] = 0
     sweep_counter += 1
 
     # update the image
@@ -622,6 +818,9 @@ algorithm_dropdown.bind("<<ComboboxSelected>>", update_algorithm_choice)
 
 advanced_btn = ttk.Button(slider_frame, text="Advanced Options", command=open_advanced_options)
 advanced_btn.grid(row=7, column=0, padx=5, pady=5)
+
+generate_data_btn = ttk.Button(slider_frame, text="Generate Data", command=lambda: generate_data())
+generate_data_btn.grid(row=7, column=1, padx=5, pady=5)
 
 # # precompile numba functions
 # This is only necessary for functions without numba signatures
