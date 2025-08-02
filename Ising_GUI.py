@@ -275,7 +275,6 @@ def Glauber(spins, T, J, h, E, M, L, Acceptance, sweepcount):
 
     return spins, Acceptance, flipped_sites[:flip_count], E, M, sweepcount
 
-# @njit(fastmath=FASTMATH, cache=CACHE)
 @njit(types.Tuple((int32[:, :],int32[:, :]))
     (int32[:, :],float64,float64,float64,int32),
     fastmath=FASTMATH,cache=CACHE)
@@ -437,9 +436,23 @@ def update_observable_labels():
     timer_label.config(text=f"Sweeps/second: {sweep_counter / (time.time() - timer - 0.1):>9.3f}")
     root.after(50, update_observable_labels)
 
-def update_algorithm_choice(event):
+def update_algorithm_choice_main(event):
     global algorithm, magneticfield_entry, magneticfield_slider
-    algorithm = algorithm_dropdown.get()
+    algorithm = algorithm_dropdown_main.get()
+    if algorithm == "Kawasaki" or algorithm == "Wolff" or algorithm == "Swendsen-Wang":
+        magneticfield_entry.insert(0, 0)  # set initial value
+        magneticfield_slider.set(0)
+        magneticfield_entry.config(state=tk.DISABLED)
+        magneticfield_slider.config(state=tk.DISABLED)
+    else:
+        magneticfield_entry.config(state=tk.NORMAL)
+        magneticfield_slider.config(state=tk.NORMAL)
+    
+    # reset_for_parameter_change()
+
+def update_algorithm_choice_popup(event):
+    global algorithm, magneticfield_entry, magneticfield_slider, algorithm_dropdown_popup
+    algorithm = algorithm_dropdown_popup.get()
     if algorithm == "Kawasaki" or algorithm == "Wolff" or algorithm == "Swendsen-Wang":
         magneticfield_entry.insert(0, 0)  # set initial value
         magneticfield_slider.set(0)
@@ -491,9 +504,26 @@ def open_advanced_options():
 
     apply_btn = ttk.Button(adv_win, text="Apply", command=apply_options)
     apply_btn.pack(pady=10)
-
+    
 def generate_data():
     global progressbar
+    def input_onoff(CONFIG):
+        temp_slider.config(state=CONFIG)
+        temp_entry.config(state=CONFIG)
+        coupling_slider.config(state=CONFIG)
+        coupling_entry.config(state=CONFIG)
+        magneticfield_slider.config(state=CONFIG)
+        magneticfield_entry.config(state=CONFIG)
+        warmup_entry.config(state=CONFIG)
+        Ti_entry.config(state=CONFIG)
+        Tf_entry.config(state=CONFIG)
+        Ts_entry.config(state=CONFIG)
+        L_entry.config(state=CONFIG)
+        algorithm_dropdown_main.config(state=CONFIG)
+        algorithm_dropdown_popup.config(state=CONFIG)
+        measurement_entry.config(state=CONFIG)
+        bin_entry.config(state=CONFIG)
+        size_dropdown.config(state=CONFIG)
     def run_data_generation():
         global T, Ti, Tf, Ts, L, J, h, algorithm, spins, E, M, Acceptance, sweepcount, scale, T_values, T_counter, RUN_SIM
         global warmup_sweeps, measurement_sweeps, pil_img, E_bins, M_bins, N_bins, Nperbin
@@ -502,13 +532,14 @@ def generate_data():
             Tf = float(Tf_entry.get())
             Ts = float(Ts_entry.get())
             L = int(L_entry.get())
+            size_dropdown.set(str(L))
             J = float(coupling_entry.get())
             h = float(magneticfield_entry.get())
             warmup_sweeps = int(warmup_entry.get())
             measurement_sweeps = int(measurement_entry.get())
             N_bins = int(bin_entry.get())
             Nperbin = measurement_sweeps // N_bins
-            algorithm = algorithm_dropdown.get()
+            algorithm = algorithm_dropdown_popup.get()
 
             E_bins = np.zeros(N_bins, dtype=np.float64) # energy bins
             M_bins = np.zeros(N_bins, dtype=np.float64) # magnetization bins 
@@ -551,6 +582,16 @@ def generate_data():
 
         RUN_SIM = True
         print(f"Running simulation from Ti={Ti} to Tf={Tf} with step Ts={Ts}, L={L}, J={J}, h={h}, algorithm={algorithm}")
+        start_btn.config(text="Stop", command=stop_data_generation)
+        progressbar["value"] = 0
+        input_onoff(tk.DISABLED)
+
+    def stop_data_generation():
+        global RUN_SIM
+        RUN_SIM = False
+        input_onoff(tk.NORMAL)
+        start_btn.config(text="Start", command=run_data_generation)
+        print("Simulation stopped.")
 
     sim_win = tk.Toplevel(root)
     sim_win.title("Run a Simulation")
@@ -582,9 +623,10 @@ def generate_data():
 
     algorithm_label = ttk.Label(sim_win, text="Algorithm:")
     algorithm_label.grid(row=4, column=0, padx=5, pady=5)
-    algorithm_dropdown = ttk.Combobox(sim_win, values=["Metropolis", "Wolff", "Glauber", "Swendsen-Wang", "Kawasaki", "HeatBath"])
-    algorithm_dropdown.current(0)
-    algorithm_dropdown.grid(row=4, column=1, padx=5, pady=5)
+    algorithm_dropdown_popup = ttk.Combobox(sim_win, values=["Metropolis", "Wolff", "Glauber", "Swendsen-Wang", "Kawasaki", "HeatBath"])
+    algorithm_dropdown_popup.current(0)
+    algorithm_dropdown_popup.grid(row=4, column=1, padx=5, pady=5)
+    algorithm_dropdown_popup.bind("<<ComboboxSelected>>", update_algorithm_choice_popup)
 
     coupling_label = ttk.Label(sim_win, text="Coupling Constant (J):")
     coupling_label.grid(row=5, column=0, padx=5, pady=5)
@@ -810,11 +852,11 @@ timer_label.config(width=25)
 
 algorithm_label = ttk.Label(slider_frame, text="Algorithm:")
 algorithm_label.grid(row=5, column=0, padx=5, pady=5)
-algorithm_dropdown = ttk.Combobox(slider_frame, values=["Metropolis", "Wolff", "Glauber", "Swendsen-Wang", "Kawasaki", "HeatBath"], state="readonly")
-algorithm_dropdown.current(0)
-algorithm_dropdown.grid(row=5, column=1, padx=5, pady=5)
+algorithm_dropdown_main = ttk.Combobox(slider_frame, values=["Metropolis", "Wolff", "Glauber", "Swendsen-Wang", "Kawasaki", "HeatBath"], state="readonly")
+algorithm_dropdown_main.current(0)
+algorithm_dropdown_main.grid(row=5, column=1, padx=5, pady=5)
 
-algorithm_dropdown.bind("<<ComboboxSelected>>", update_algorithm_choice)
+algorithm_dropdown_main.bind("<<ComboboxSelected>>", update_algorithm_choice_main)
 
 advanced_btn = ttk.Button(slider_frame, text="Advanced Options", command=open_advanced_options)
 advanced_btn.grid(row=7, column=0, padx=5, pady=5)
