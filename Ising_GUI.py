@@ -25,12 +25,6 @@ count = 0 # counter for plot updates
 Acceptance = 0 # initialize acceptance counter
 sweepcount = 1 # initialize sweep counter
 sweep_counter = 0 # counter for sweeps per second
-# warmup_sweeps = 1000 # number of sweeps for warmup
-# measurement_sweeps = 1000 # number of sweeps for measurement
-# N_bins = 5
-# Nperbin = measurement_sweeps // N_bins # number of measurements per bin
-# E_bins = np.empty(N_bins, dtype=np.float64) # energy bins
-# M_bins = np.empty(N_bins, dtype=np.float64) # magnetization bins 
 
 scale = 512 // L # scaling factor for display
 
@@ -468,7 +462,8 @@ def update_size_choice(event):
     reset_for_parameter_change()
 
 def update_size(L):
-    global scale, spins, rgb_array, label_img, label, E, M
+    global scale, spins, rgb_array, label_img, label, E, M, size_dropdown
+    size_dropdown.set(str(L))
     scale = 512 // L
     spins = np.random.choice([-1, 1], size=(L, L)).astype(np.int32)
     rgb_array = init_rgb_array(spins, L)
@@ -498,6 +493,7 @@ def open_advanced_options():
     apply_btn.pack(pady=10)
 
 def generate_data():
+    global progressbar
     def run_data_generation():
         global T, Ti, Tf, Ts, L, J, h, algorithm, spins, E, M, Acceptance, sweepcount, scale, T_values, T_counter, RUN_SIM
         global warmup_sweeps, measurement_sweeps, pil_img, E_bins, M_bins, N_bins, Nperbin
@@ -514,8 +510,8 @@ def generate_data():
             Nperbin = measurement_sweeps // N_bins
             algorithm = algorithm_dropdown.get()
 
-            E_bins = np.empty(N_bins, dtype=np.float64) # energy bins
-            M_bins = np.empty(N_bins, dtype=np.float64) # magnetization bins 
+            E_bins = np.zeros(N_bins, dtype=np.float64) # energy bins
+            M_bins = np.zeros(N_bins, dtype=np.float64) # magnetization bins 
 
 
         except ValueError:
@@ -623,6 +619,9 @@ def generate_data():
     start_btn = ttk.Button(sim_win, text="Start", command=run_data_generation)
     start_btn.grid(row=10, column=0, padx=5, pady=5)
 
+    progressbar = ttk.Progressbar(sim_win, orient=tk.HORIZONTAL, length=200, mode='determinate')
+    progressbar.grid(row=10, column=1, padx=5, pady=5)
+
 def update_plot(E, M, L, data_buffer):
     global root, line
     if plot_observable == "Energy":
@@ -669,6 +668,7 @@ def run_simulation():
             M_val, M_err = bins(M_bins, Nperbin, N_bins)
             print(f"T: {T}, E: {E_val / L**2}, Error: {E_err / L**2}, M: {M_val / L**2}, Error: {M_err / L**2}")
             sweep_counter = 0
+            progressbar.step(1 / len(T_values) * 100)
             T_counter += 1
             if T_counter >= len(T_values):
                 RUN_SIM = False
