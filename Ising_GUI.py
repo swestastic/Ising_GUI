@@ -93,10 +93,10 @@ def Metropolis(spins, T, J, h, E, M, L, Acceptance, sweepcount):
 
     return spins, Acceptance, flipped_sites[:flip_count], E, M, sweepcount
 
-@njit(fastmath=FASTMATH, cache=CACHE)
+@njit(parallel=PARALLEL, fastmath=FASTMATH, cache=CACHE)
 def flip_sublattice(spins, L):
-    for i in range(L):
-        for j in range(L):
+    for i in prange(L):
+        for j in prange(L):
             if (i + j) % 2 == 0:
                 spins[i, j] *= -1
     return spins
