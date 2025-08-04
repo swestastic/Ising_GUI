@@ -93,11 +93,11 @@ def Metropolis(spins, T, J, h, E, M, L, Acceptance, sweepcount):
 
     return spins, Acceptance, flipped_sites[:flip_count], E, M, sweepcount
 
+@njit(fastmath=FASTMATH, cache=CACHE)
 def flip_sublattice(spins, L):
-    # Flips the spins of one sublattice (A or B) in a checkerboard pattern.
     for i in range(L):
         for j in range(L):
-            if (i + j) % 2 == 0:  # flip sublattice A
+            if (i + j) % 2 == 0:
                 spins[i, j] *= -1
     return spins
 
@@ -676,7 +676,7 @@ def run_simulation():
         elif sweep_counter >= warmup_sweeps + measurement_sweeps:
             E_val, E_err = bins(E_bins, Nperbin, N_bins)
             M_val, M_err = bins(M_bins, Nperbin, N_bins)
-            print(f"T: {T}, E: {E_val / L**2}, Error: {E_err / L**2}, M: {M_val / L**2}, Error: {M_err / L**2}")
+            print(f"T: {T:}, E: {E_val / L**2}, Error: {E_err / L**2}, M: {M_val / L**2}, Error: {M_err / L**2}")
             sweep_counter = 0
             progressbar.step(1 / len(T_values) * 100)
             T_counter += 1
