@@ -93,6 +93,14 @@ def Metropolis(spins, T, J, h, E, M, L, Acceptance, sweepcount):
 
     return spins, Acceptance, flipped_sites[:flip_count], E, M, sweepcount
 
+def flip_sublattice(spins, L):
+    # Flips the spins of one sublattice (A or B) in a checkerboard pattern.
+    for i in range(L):
+        for j in range(L):
+            if (i + j) % 2 == 0:  # flip sublattice A
+                spins[i, j] *= -1
+    return spins
+
 @njit(fastmath=FASTMATH, cache=CACHE)
 def Wolff(spins,T,J,L, h):
     attempted=[]
@@ -100,10 +108,7 @@ def Wolff(spins,T,J,L, h):
     cluster = [(x,y)]
     prob = 1-np.exp(-2*abs(J)/T)
     if J < 0:
-        for i in range(L):
-            for j in range(L):
-                if (i+j) % 2 == 0:  # flip sublattice A
-                    spins[i,j] *= -1
+        spins = flip_sublattice(spins, L) 
 
     for i,j in cluster: # add nearest neighbors to the cluster if they are within the range
         north = i,(j+1)%L
@@ -122,10 +127,8 @@ def Wolff(spins,T,J,L, h):
         spins[x,y] *= -1
 
     if J < 0:
-        for i in range(L):
-            for j in range(L):
-                if (i+j) % 2 == 0:  # flip sublattice A back
-                    spins[i,j] *= -1
+        spins = flip_sublattice(spins, L)
+
     ClusterSize = len(cluster)
     return spins, cluster # here cluster = flipped_sites
 
@@ -135,10 +138,7 @@ def SwendsenWang(spins, T, J, h, L):
     p = 1 - np.exp(-2 * abs(J) / T)
 
     if J < 0:
-        for i in range(L):
-            for j in range(L):
-                if (i+j) % 2 == 0:  # flip sublattice A
-                    spins[i,j] *= -1
+        spins = flip_sublattice(spins, L)
 
     # Build bonds
     for i in range(L):
@@ -188,10 +188,7 @@ def SwendsenWang(spins, T, J, h, L):
                         flip_count += 1
 
     if J < 0:
-        for i in range(L):
-            for j in range(L):
-                if (i+j) % 2 == 0:
-                    spins[i,j] *= -1
+        spins = flip_sublattice(spins, L)
 
     return spins, flipped_sites[:flip_count]
 
