@@ -13,6 +13,8 @@ import time
 # Set up command line argument parsing
 parser = argparse.ArgumentParser(description="Ising Model Simulation GUI")
 parser.add_argument("--cache", type=bool, default=False, help="Enable caching for faster simulations")
+parser.add_argument("--fastmath", type=bool, default=True, help="Enable fast math optimizations")
+parser.add_argument("--parallel", type=bool, default=True, help="Enable parallel execution")
 
 # parameters
 L = 64 # lattice size (LxL)
@@ -29,8 +31,8 @@ sweep_counter = 0 # counter for sweeps per second
 scale = 512 // L # scaling factor for display
 
 # Numba settings
-FASTMATH = True
-PARALLEL = True
+FASTMATH = parser.parse_args().fastmath
+PARALLEL = parser.parse_args().parallel
 CACHE = parser.parse_args().cache
 
 RUN_SIM = False
@@ -373,15 +375,15 @@ def update_temp(val):
 def update_coupling(val):
     global J
     J = float(val)
-    coupling_entry.delete(0, tk.END)
-    coupling_entry.insert(0, f"{J:.2f}")
+    coupling_entry_main.delete(0, tk.END)
+    coupling_entry_main.insert(0, f"{J:.2f}")
     reset_for_parameter_change()
 
 def update_magneticfield(val):
     global h
     h = float(val)
-    magneticfield_entry.delete(0, tk.END)
-    magneticfield_entry.insert(0, f"{h:.2f}")
+    magneticfield_entry_main.delete(0, tk.END)
+    magneticfield_entry_main.insert(0, f"{h:.2f}")
     reset_for_parameter_change()
 
 def update_temp_entry(val):
@@ -440,27 +442,15 @@ def update_algorithm_choice_main(event):
     global algorithm, magneticfield_entry, magneticfield_slider
     algorithm = algorithm_dropdown_main.get()
     if algorithm == "Kawasaki" or algorithm == "Wolff" or algorithm == "Swendsen-Wang":
-        magneticfield_entry.insert(0, 0)  # set initial value
+        magneticfield_entry_main.insert(0, 0)  # set initial value
         magneticfield_slider.set(0)
-        magneticfield_entry.config(state=tk.DISABLED)
+        magneticfield_entry_main.config(state=tk.DISABLED)
         magneticfield_slider.config(state=tk.DISABLED)
     else:
-        magneticfield_entry.config(state=tk.NORMAL)
+        magneticfield_entry_main.config(state=tk.NORMAL)
         magneticfield_slider.config(state=tk.NORMAL)
     
     # reset_for_parameter_change()
-
-def update_algorithm_choice_popup(event):
-    global algorithm, magneticfield_entry, magneticfield_slider, algorithm_dropdown_popup
-    algorithm = algorithm_dropdown_popup.get()
-    if algorithm == "Kawasaki" or algorithm == "Wolff" or algorithm == "Swendsen-Wang":
-        magneticfield_entry.insert(0, 0)  # set initial value
-        magneticfield_slider.set(0)
-        magneticfield_entry.config(state=tk.DISABLED)
-        magneticfield_slider.config(state=tk.DISABLED)
-    else:
-        magneticfield_entry.config(state=tk.NORMAL)
-        magneticfield_slider.config(state=tk.NORMAL)
     
     # reset_for_parameter_change()
 
@@ -483,27 +473,6 @@ def update_size(L):
     pil_img = update_spins_image(spins, [], rgb_array, scale)
     label_img = ImageTk.PhotoImage(pil_img)
     reset_for_parameter_change()
-
-def open_advanced_options():
-    def apply_options():
-        global FASTMATH, PARALLEL
-        FASTMATH = fastmath_var.get()
-        PARALLEL = parallel_var.get()
-        adv_win.destroy()
-
-    adv_win = tk.Toplevel(root)
-    adv_win.title("Advanced Options")
-    adv_win.geometry("250x150")
-    fastmath_var = tk.BooleanVar(value=FASTMATH)
-    parallel_var = tk.BooleanVar(value=PARALLEL)
-
-    fastmath_check = ttk.Checkbutton(adv_win, text="Enable FASTMATH", variable=fastmath_var)
-    fastmath_check.pack(pady=10)
-    parallel_check = ttk.Checkbutton(adv_win, text="Enable PARALLEL", variable=parallel_var)
-    parallel_check.pack(pady=10)
-
-    apply_btn = ttk.Button(adv_win, text="Apply", command=apply_options)
-    apply_btn.pack(pady=10)
     
 def generate_data():
     global progressbar
@@ -511,19 +480,21 @@ def generate_data():
         temp_slider.config(state=CONFIG)
         temp_entry.config(state=CONFIG)
         coupling_slider.config(state=CONFIG)
-        coupling_entry.config(state=CONFIG)
+        coupling_entry_main.config(state=CONFIG)
+        coupling_entry_popup.config(state=CONFIG)
         magneticfield_slider.config(state=CONFIG)
-        magneticfield_entry.config(state=CONFIG)
+        magneticfield_entry_main.config(state=CONFIG)
+        magneticfield_entry_popup.config(state=CONFIG)
         warmup_entry.config(state=CONFIG)
         Ti_entry.config(state=CONFIG)
         Tf_entry.config(state=CONFIG)
         Ts_entry.config(state=CONFIG)
         L_entry.config(state=CONFIG)
         algorithm_dropdown_main.config(state=CONFIG)
-        algorithm_dropdown_popup.config(state=CONFIG)
         measurement_entry.config(state=CONFIG)
         bin_entry.config(state=CONFIG)
         size_dropdown.config(state=CONFIG)
+
     def run_data_generation():
         global T, Ti, Tf, Ts, L, J, h, algorithm, spins, E, M, Acceptance, sweepcount, scale, T_values, T_counter, RUN_SIM
         global warmup_sweeps, measurement_sweeps, pil_img, E_bins, M_bins, N_bins, Nperbin
@@ -533,8 +504,8 @@ def generate_data():
             Ts = float(Ts_entry.get())
             L = int(L_entry.get())
             size_dropdown.set(str(L))
-            J = float(coupling_entry.get())
-            h = float(magneticfield_entry.get())
+            J = float(coupling_entry_popup.get())
+            h = float(magneticfield_entry_popup.get())
             warmup_sweeps = int(warmup_entry.get())
             measurement_sweeps = int(measurement_entry.get())
             N_bins = int(bin_entry.get())
@@ -626,19 +597,19 @@ def generate_data():
     algorithm_dropdown_popup = ttk.Combobox(sim_win, values=["Metropolis", "Wolff", "Glauber", "Swendsen-Wang", "Kawasaki", "HeatBath"])
     algorithm_dropdown_popup.current(0)
     algorithm_dropdown_popup.grid(row=4, column=1, padx=5, pady=5)
-    algorithm_dropdown_popup.bind("<<ComboboxSelected>>", update_algorithm_choice_popup)
+    algorithm_dropdown_popup.config(state="disabled")  # Disable dropdown for now
 
     coupling_label = ttk.Label(sim_win, text="Coupling Constant (J):")
     coupling_label.grid(row=5, column=0, padx=5, pady=5)
-    coupling_entry = ttk.Entry(sim_win, width=10)
-    coupling_entry.insert(0, str(1.0))
-    coupling_entry.grid(row=5, column=1, padx=5, pady=5)
+    coupling_entry_popup = ttk.Entry(sim_win, width=10)
+    coupling_entry_popup.insert(0, str(1.0))
+    coupling_entry_popup.grid(row=5, column=1, padx=5, pady=5)
 
     magneticfield_label = ttk.Label(sim_win, text="Magnetic Field (h):")
     magneticfield_label.grid(row=6, column=0, padx=5, pady=5)
-    magneticfield_entry = ttk.Entry(sim_win, width=10)
-    magneticfield_entry.insert(0, str(0.0))
-    magneticfield_entry.grid(row=6, column=1, padx=5, pady=5)
+    magneticfield_entry_popup = ttk.Entry(sim_win, width=10)
+    magneticfield_entry_popup.insert(0, str(0.0))
+    magneticfield_entry_popup.grid(row=6, column=1, padx=5, pady=5)
 
     warmup_label = ttk.Label(sim_win, text="Warmup Sweeps:")
     warmup_label.grid(row=7, column=0, padx=5, pady=5)
@@ -807,20 +778,20 @@ coupling_label.grid(row=2, column=0, padx=5, pady=5)
 coupling_slider = ttk.Scale(slider_frame, from_=-2.0, to=2.0, orient=tk.HORIZONTAL, value=J, length=250)
 coupling_slider.grid(row=2, column=1, padx=5, pady=5)
 coupling_slider.config(command=update_coupling)
-coupling_entry = ttk.Entry(slider_frame, width=5)
-coupling_entry.insert(0, str(J))  # set initial value
-coupling_entry.bind("<Return>", lambda event: update_coupling_entry(coupling_entry.get()))
-coupling_entry.grid(row=2, column=2, padx=5, pady=5)
+coupling_entry_main = ttk.Entry(slider_frame, width=5)
+coupling_entry_main.insert(0, str(J))  # set initial value
+coupling_entry_main.bind("<Return>", lambda event: update_coupling_entry(coupling_entry_main.get()))
+coupling_entry_main.grid(row=2, column=2, padx=5, pady=5)
 
 magneticfield_label = ttk.Label(slider_frame, text="Magnetic Field (h):")
 magneticfield_label.grid(row=3, column=0, padx=5, pady=5)
 magneticfield_slider = ttk.Scale(slider_frame, from_=-2.0, to=2.0, orient=tk.HORIZONTAL, value=h, length=250)
 magneticfield_slider.grid(row=3, column=1, padx=5, pady=5)
 magneticfield_slider.config(command=update_magneticfield)
-magneticfield_entry = ttk.Entry(slider_frame, width=5)
-magneticfield_entry.insert(0, str(h))  # set initial value
-magneticfield_entry.bind("<Return>", lambda event: update_magneticfield_entry(magneticfield_entry.get()))
-magneticfield_entry.grid(row=3, column=2, padx=5, pady=5)
+magneticfield_entry_main = ttk.Entry(slider_frame, width=5)
+magneticfield_entry_main.insert(0, str(h))  # set initial value
+magneticfield_entry_main.bind("<Return>", lambda event: update_magneticfield_entry(magneticfield_entry_main.get()))
+magneticfield_entry_main.grid(row=3, column=2, padx=5, pady=5)
 
 observable_label = ttk.Label(slider_frame, text="Observable to Plot:")
 observable_label.grid(row=4, column=0, padx=5, pady=5)
@@ -857,9 +828,6 @@ algorithm_dropdown_main.current(0)
 algorithm_dropdown_main.grid(row=5, column=1, padx=5, pady=5)
 
 algorithm_dropdown_main.bind("<<ComboboxSelected>>", update_algorithm_choice_main)
-
-advanced_btn = ttk.Button(slider_frame, text="Advanced Options", command=open_advanced_options)
-advanced_btn.grid(row=7, column=0, padx=5, pady=5)
 
 generate_data_btn = ttk.Button(slider_frame, text="Generate Data", command=lambda: generate_data())
 generate_data_btn.grid(row=7, column=1, padx=5, pady=5)
