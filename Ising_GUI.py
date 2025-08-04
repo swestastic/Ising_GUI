@@ -95,6 +95,8 @@ def Metropolis(spins, T, J, h, E, M, L, Acceptance, sweepcount):
 
 @njit(parallel=PARALLEL, fastmath=FASTMATH, cache=CACHE)
 def flip_sublattice(spins, L):
+    # Used for J<0 cluster algorithms. Flips the spins of the first sublattice.
+    # Only valid for bipartite lattices (e.g. even L square lattice), gauge transformation.
     for i in prange(L):
         for j in prange(L):
             if (i + j) % 2 == 0:
@@ -103,6 +105,8 @@ def flip_sublattice(spins, L):
 
 @njit(fastmath=FASTMATH, cache=CACHE)
 def Wolff(spins,T,J,L, h):
+    # Wolff Cluster algorithm. Starts at a random site and nearest neighbors are added to the cluster with a probability.
+    # The cluster is flipped 100% of the time, so at least one site is guaranteed to be flipped every move.
     attempted=[]
     x,y = np.random.randint(0,L,2)
     cluster = [(x,y)]
@@ -134,6 +138,9 @@ def Wolff(spins,T,J,L, h):
 
 @njit(fastmath=FASTMATH, cache=CACHE)
 def SwendsenWang(spins, T, J, h, L):
+    # Swendsen-Wang Cluster algorithm. Similar to Wolff, but uses a different method to build clusters.
+    # Instead of building one cluster that is always flipped, it builds multiple clusters that are flipped with a probability of 50%.
+    # Every site on the lattice is added to a cluster, so there can be at most L^2 clusters.
     bonds = np.zeros((L, L, 4), dtype=np.uint8)  # 0: up, 1: down, 2: left, 3: right
     p = 1 - np.exp(-2 * abs(J) / T)
 
@@ -196,6 +203,8 @@ def SwendsenWang(spins, T, J, h, L):
     (types.Array(int32, 2, 'C'),float64, float64, float64,int32),
     fastmath=FASTMATH, cache=CACHE)
 def Kawasaki(spins, T, J, h, L):
+    # Kawasaki algorithm. It swaps pairs of neighboring spins with a probability based on the energy change.
+    # Magnetization is conserved. No site flipping, only swaps between neighboring spins.
     flipped_sites = np.zeros((2*L**2, 2), dtype=np.int32)
     flip_count = 0
     for i in range(L**2):
@@ -362,11 +371,21 @@ def reset_for_parameter_change():
     timer = time.time()
     sweep_counter = 0
 
+############################## Tkinter Operations ##############################
+
 def update_temp(val):
     global T
     T = float(val)
-    temp_entry.delete(0, tk.END)
-    temp_entry.insert(0, f"{T:.2f}")
+    conf = temp_entry.config("state")[-1]  # ensure widget state is current
+    print(f"widget is {conf}")
+    if conf == "disabled":
+        temp_entry.config(state=tk.NORMAL)
+        temp_entry.delete(0, tk.END)
+        temp_entry.insert(0, f"{T:.2f}")
+        temp_entry.config(state=tk.DISABLED)
+    else: 
+        temp_entry.delete(0, tk.END)
+        temp_entry.insert(0, f"{T:.2f}")
     reset_for_parameter_change()
 
 def update_coupling(val):
@@ -384,30 +403,30 @@ def update_magneticfield(val):
     reset_for_parameter_change()
 
 def update_temp_entry(val):
-    try:
+    conf = temp_slider.config("state")[-1]
+    print(f"widget is {conf}")
+    if conf == "disabled":
+        temp_slider.config(state=tk.NORMAL)
         T_val = float(val)
         if 0.1 <= T_val <= 5.0:
             temp_slider.set(T_val)
-    except ValueError:
-        pass
+        temp_slider.config(state=tk.DISABLED)
+    else:
+        T_val = float(val)
+        if 0.1 <= T_val <= 5.0:
+            temp_slider.set(T_val)
     reset_for_parameter_change()
 
 def update_coupling_entry(val):
-    try:
-        J_val = float(val)
-        if -2.0 <= J_val <= 2.0:
-            coupling_slider.set(J_val)
-    except ValueError:
-        pass
+    J_val = float(val)
+    if -2.0 <= J_val <= 2.0:
+        coupling_slider.set(J_val)
     reset_for_parameter_change()
 
 def update_magneticfield_entry(val):
-    try:
-        h_val = float(val)
-        if -2.0 <= h_val <= 2.0:
-            magneticfield_slider.set(h_val)
-    except ValueError:
-        pass
+    h_val = float(val)
+    if -2.0 <= h_val <= 2.0:
+        magneticfield_slider.set(h_val)
     reset_for_parameter_change()
 
 def update_plot_choice(event):
